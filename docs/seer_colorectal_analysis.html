@@ -1,0 +1,3355 @@
+<!DOCTYPE html>
+
+<html>
+
+<head>
+
+<meta charset="utf-8" />
+<meta name="generator" content="pandoc" />
+<meta http-equiv="X-UA-Compatible" content="IE=EDGE" />
+
+
+<meta name="author" content="Francesc Castro-Giner" />
+
+<meta name="date" content="2025-02-06" />
+
+<title>SEER data analysis for colon and rectum cancer cases</title>
+
+<script src="site_libs/header-attrs-2.25/header-attrs.js"></script>
+<script src="site_libs/jquery-3.6.0/jquery-3.6.0.min.js"></script>
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<link href="site_libs/bootstrap-3.3.5/css/cosmo.min.css" rel="stylesheet" />
+<script src="site_libs/bootstrap-3.3.5/js/bootstrap.min.js"></script>
+<script src="site_libs/bootstrap-3.3.5/shim/html5shiv.min.js"></script>
+<script src="site_libs/bootstrap-3.3.5/shim/respond.min.js"></script>
+<style>h1 {font-size: 34px;}
+       h1.title {font-size: 38px;}
+       h2 {font-size: 30px;}
+       h3 {font-size: 24px;}
+       h4 {font-size: 18px;}
+       h5 {font-size: 16px;}
+       h6 {font-size: 12px;}
+       code {color: inherit; background-color: rgba(0, 0, 0, 0.04);}
+       pre:not([class]) { background-color: white }</style>
+<script src="site_libs/jqueryui-1.13.2/jquery-ui.min.js"></script>
+<link href="site_libs/tocify-1.9.1/jquery.tocify.css" rel="stylesheet" />
+<script src="site_libs/tocify-1.9.1/jquery.tocify.js"></script>
+<script src="site_libs/navigation-1.1/tabsets.js"></script>
+<script src="site_libs/navigation-1.1/codefolding.js"></script>
+<link href="site_libs/highlightjs-9.12.0/textmate.css" rel="stylesheet" />
+<script src="site_libs/highlightjs-9.12.0/highlight.js"></script>
+<script src="site_libs/kePrint-0.0.1/kePrint.js"></script>
+<link href="site_libs/lightable-0.0.1/lightable.css" rel="stylesheet" />
+<link href="site_libs/font-awesome-6.4.2/css/all.min.css" rel="stylesheet" />
+<link href="site_libs/font-awesome-6.4.2/css/v4-shims.min.css" rel="stylesheet" />
+
+<link rel="icon" href="https://github.com/workflowr/workflowr-assets/raw/main/img/reproducible.png">
+<!-- Add a small amount of space between sections. -->
+<style type="text/css">
+div.section {
+  padding-top: 12px;
+}
+</style>
+
+
+
+<style type="text/css">
+  code{white-space: pre-wrap;}
+  span.smallcaps{font-variant: small-caps;}
+  span.underline{text-decoration: underline;}
+  div.column{display: inline-block; vertical-align: top; width: 50%;}
+  div.hanging-indent{margin-left: 1.5em; text-indent: -1.5em;}
+  ul.task-list{list-style: none;}
+    </style>
+
+<style type="text/css">code{white-space: pre;}</style>
+<script type="text/javascript">
+if (window.hljs) {
+  hljs.configure({languages: []});
+  hljs.initHighlightingOnLoad();
+  if (document.readyState && document.readyState === "complete") {
+    window.setTimeout(function() { hljs.initHighlighting(); }, 0);
+  }
+}
+</script>
+
+
+
+
+
+
+
+
+
+<style type = "text/css">
+.main-container {
+  max-width: 940px;
+  margin-left: auto;
+  margin-right: auto;
+}
+img {
+  max-width:100%;
+}
+.tabbed-pane {
+  padding-top: 12px;
+}
+.html-widget {
+  margin-bottom: 20px;
+}
+button.code-folding-btn:focus {
+  outline: none;
+}
+summary {
+  display: list-item;
+}
+details > summary > p:only-child {
+  display: inline;
+}
+pre code {
+  padding: 0;
+}
+</style>
+
+
+<style type="text/css">
+.dropdown-submenu {
+  position: relative;
+}
+.dropdown-submenu>.dropdown-menu {
+  top: 0;
+  left: 100%;
+  margin-top: -6px;
+  margin-left: -1px;
+  border-radius: 0 6px 6px 6px;
+}
+.dropdown-submenu:hover>.dropdown-menu {
+  display: block;
+}
+.dropdown-submenu>a:after {
+  display: block;
+  content: " ";
+  float: right;
+  width: 0;
+  height: 0;
+  border-color: transparent;
+  border-style: solid;
+  border-width: 5px 0 5px 5px;
+  border-left-color: #cccccc;
+  margin-top: 5px;
+  margin-right: -10px;
+}
+.dropdown-submenu:hover>a:after {
+  border-left-color: #adb5bd;
+}
+.dropdown-submenu.pull-left {
+  float: none;
+}
+.dropdown-submenu.pull-left>.dropdown-menu {
+  left: -100%;
+  margin-left: 10px;
+  border-radius: 6px 0 6px 6px;
+}
+</style>
+
+<script type="text/javascript">
+// manage active state of menu based on current page
+$(document).ready(function () {
+  // active menu anchor
+  href = window.location.pathname
+  href = href.substr(href.lastIndexOf('/') + 1)
+  if (href === "")
+    href = "index.html";
+  var menuAnchor = $('a[href="' + href + '"]');
+
+  // mark the anchor link active (and if it's in a dropdown, also mark that active)
+  var dropdown = menuAnchor.closest('li.dropdown');
+  if (window.bootstrap) { // Bootstrap 4+
+    menuAnchor.addClass('active');
+    dropdown.find('> .dropdown-toggle').addClass('active');
+  } else { // Bootstrap 3
+    menuAnchor.parent().addClass('active');
+    dropdown.addClass('active');
+  }
+
+  // Navbar adjustments
+  var navHeight = $(".navbar").first().height() + 15;
+  var style = document.createElement('style');
+  var pt = "padding-top: " + navHeight + "px; ";
+  var mt = "margin-top: -" + navHeight + "px; ";
+  var css = "";
+  // offset scroll position for anchor links (for fixed navbar)
+  for (var i = 1; i <= 6; i++) {
+    css += ".section h" + i + "{ " + pt + mt + "}\n";
+  }
+  style.innerHTML = "body {" + pt + "padding-bottom: 40px; }\n" + css;
+  document.head.appendChild(style);
+});
+</script>
+
+<!-- tabsets -->
+
+<style type="text/css">
+.tabset-dropdown > .nav-tabs {
+  display: inline-table;
+  max-height: 500px;
+  min-height: 44px;
+  overflow-y: auto;
+  border: 1px solid #ddd;
+  border-radius: 4px;
+}
+
+.tabset-dropdown > .nav-tabs > li.active:before, .tabset-dropdown > .nav-tabs.nav-tabs-open:before {
+  content: "\e259";
+  font-family: 'Glyphicons Halflings';
+  display: inline-block;
+  padding: 10px;
+  border-right: 1px solid #ddd;
+}
+
+.tabset-dropdown > .nav-tabs.nav-tabs-open > li.active:before {
+  content: "\e258";
+  font-family: 'Glyphicons Halflings';
+  border: none;
+}
+
+.tabset-dropdown > .nav-tabs > li.active {
+  display: block;
+}
+
+.tabset-dropdown > .nav-tabs > li > a,
+.tabset-dropdown > .nav-tabs > li > a:focus,
+.tabset-dropdown > .nav-tabs > li > a:hover {
+  border: none;
+  display: inline-block;
+  border-radius: 4px;
+  background-color: transparent;
+}
+
+.tabset-dropdown > .nav-tabs.nav-tabs-open > li {
+  display: block;
+  float: none;
+}
+
+.tabset-dropdown > .nav-tabs > li {
+  display: none;
+}
+</style>
+
+<!-- code folding -->
+<style type="text/css">
+.code-folding-btn { margin-bottom: 4px; }
+</style>
+
+
+
+<style type="text/css">
+
+#TOC {
+  margin: 25px 0px 20px 0px;
+}
+@media (max-width: 768px) {
+#TOC {
+  position: relative;
+  width: 100%;
+}
+}
+
+@media print {
+.toc-content {
+  /* see https://github.com/w3c/csswg-drafts/issues/4434 */
+  float: right;
+}
+}
+
+.toc-content {
+  padding-left: 30px;
+  padding-right: 40px;
+}
+
+div.main-container {
+  max-width: 1200px;
+}
+
+div.tocify {
+  width: 20%;
+  max-width: 260px;
+  max-height: 85%;
+}
+
+@media (min-width: 768px) and (max-width: 991px) {
+  div.tocify {
+    width: 25%;
+  }
+}
+
+@media (max-width: 767px) {
+  div.tocify {
+    width: 100%;
+    max-width: none;
+  }
+}
+
+.tocify ul, .tocify li {
+  line-height: 20px;
+}
+
+.tocify-subheader .tocify-item {
+  font-size: 0.90em;
+}
+
+.tocify .list-group-item {
+  border-radius: 0px;
+}
+
+
+</style>
+
+
+
+</head>
+
+<body>
+
+
+<div class="container-fluid main-container">
+
+
+<!-- setup 3col/9col grid for toc_float and main content  -->
+<div class="row">
+<div class="col-xs-12 col-sm-4 col-md-3">
+<div id="TOC" class="tocify">
+</div>
+</div>
+
+<div class="toc-content col-xs-12 col-sm-8 col-md-9">
+
+
+
+
+<div class="navbar navbar-default  navbar-fixed-top" role="navigation">
+  <div class="container">
+    <div class="navbar-header">
+      <button type="button" class="navbar-toggle collapsed" data-toggle="collapse" data-bs-toggle="collapse" data-target="#navbar" data-bs-target="#navbar">
+        <span class="icon-bar"></span>
+        <span class="icon-bar"></span>
+        <span class="icon-bar"></span>
+      </button>
+      <a class="navbar-brand" href="index.html">met-paths</a>
+    </div>
+    <div id="navbar" class="navbar-collapse collapse">
+      <ul class="nav navbar-nav">
+        <li>
+  <a href="index.html">Home</a>
+</li>
+<li>
+  <a href="about.html">About</a>
+</li>
+<li>
+  <a href="license.html">License</a>
+</li>
+      </ul>
+      <ul class="nav navbar-nav navbar-right">
+        <li>
+  <a href="https://github.com/TheAcetoLab/sznurkowska-met-paths">
+    <span class="fab fa-github"></span>
+     
+    Source code
+  </a>
+</li>
+      </ul>
+    </div><!--/.nav-collapse -->
+  </div><!--/.container -->
+</div><!--/.navbar -->
+
+<div id="header">
+
+<div class="btn-group pull-right float-right">
+<button type="button" class="btn btn-default btn-xs btn-secondary btn-sm dropdown-toggle" data-toggle="dropdown" data-bs-toggle="dropdown" aria-haspopup="true" aria-expanded="false"><span>Code</span> <span class="caret"></span></button>
+<ul class="dropdown-menu dropdown-menu-right" style="min-width: 50px;">
+<li><a id="rmd-show-all-code" href="#">Show All Code</a></li>
+<li><a id="rmd-hide-all-code" href="#">Hide All Code</a></li>
+</ul>
+</div>
+
+
+
+<h1 class="title toc-ignore">SEER data analysis for colon and rectum
+cancer cases</h1>
+<h4 class="author">Francesc Castro-Giner</h4>
+<h4 class="date">February 06, 2025</h4>
+
+</div>
+
+
+<p>
+<button type="button" class="btn btn-default btn-workflowr btn-workflowr-report" data-toggle="collapse" data-target="#workflowr-report">
+<span class="glyphicon glyphicon-list" aria-hidden="true"></span>
+workflowr <span class="glyphicon glyphicon-ok text-success"
+aria-hidden="true"></span>
+</button>
+</p>
+<div id="workflowr-report" class="collapse">
+<ul class="nav nav-tabs">
+<li class="active">
+<a data-toggle="tab" href="#summary">Summary</a>
+</li>
+<li>
+<a data-toggle="tab" href="#checks"> Checks <span
+class="glyphicon glyphicon-ok text-success" aria-hidden="true"></span>
+</a>
+</li>
+<li>
+<a data-toggle="tab" href="#versions">Past versions</a>
+</li>
+</ul>
+<div class="tab-content">
+<div id="summary" class="tab-pane fade in active">
+<p>
+<strong>Last updated:</strong> 2025-02-06
+</p>
+<p>
+<strong>Checks:</strong> <span
+class="glyphicon glyphicon-ok text-success" aria-hidden="true"></span> 7
+<span class="glyphicon glyphicon-exclamation-sign text-danger"
+aria-hidden="true"></span> 0
+</p>
+<p>
+<strong>Knit directory:</strong> <code>sznurkowska-met-paths/</code>
+<span class="glyphicon glyphicon-question-sign" aria-hidden="true"
+title="This is the local directory in which the code in this file was executed.">
+</span>
+</p>
+<p>
+This reproducible <a href="https://rmarkdown.rstudio.com">R Markdown</a>
+analysis was created with <a
+  href="https://github.com/workflowr/workflowr">workflowr</a> (version
+1.7.1). The <em>Checks</em> tab describes the reproducibility checks
+that were applied when the results were created. The <em>Past
+versions</em> tab lists the development history.
+</p>
+<hr>
+</div>
+<div id="checks" class="tab-pane fade">
+<div id="workflowr-checks" class="panel-group">
+<div class="panel panel-default">
+<div class="panel-heading">
+<p class="panel-title">
+<a data-toggle="collapse" data-parent="#workflowr-checks" href="#strongRMarkdownfilestronguptodate">
+<span class="glyphicon glyphicon-ok text-success"
+aria-hidden="true"></span> <strong>R Markdown file:</strong> up-to-date
+</a>
+</p>
+</div>
+<div id="strongRMarkdownfilestronguptodate"
+class="panel-collapse collapse">
+<div class="panel-body">
+<p>Great! Since the R Markdown file has been committed to the Git
+repository, you know the exact version of the code that produced these
+results.</p>
+</div>
+</div>
+</div>
+<div class="panel panel-default">
+<div class="panel-heading">
+<p class="panel-title">
+<a data-toggle="collapse" data-parent="#workflowr-checks" href="#strongEnvironmentstrongempty">
+<span class="glyphicon glyphicon-ok text-success"
+aria-hidden="true"></span> <strong>Environment:</strong> empty </a>
+</p>
+</div>
+<div id="strongEnvironmentstrongempty" class="panel-collapse collapse">
+<div class="panel-body">
+<p>Great job! The global environment was empty. Objects defined in the
+global environment can affect the analysis in your R Markdown file in
+unknown ways. For reproduciblity it’s best to always run the code in an
+empty environment.</p>
+</div>
+</div>
+</div>
+<div class="panel panel-default">
+<div class="panel-heading">
+<p class="panel-title">
+<a data-toggle="collapse" data-parent="#workflowr-checks" href="#strongSeedstrongcodesetseed20250206code">
+<span class="glyphicon glyphicon-ok text-success"
+aria-hidden="true"></span> <strong>Seed:</strong>
+<code>set.seed(20250206)</code> </a>
+</p>
+</div>
+<div id="strongSeedstrongcodesetseed20250206code"
+class="panel-collapse collapse">
+<div class="panel-body">
+<p>The command <code>set.seed(20250206)</code> was run prior to running
+the code in the R Markdown file. Setting a seed ensures that any results
+that rely on randomness, e.g. subsampling or permutations, are
+reproducible.</p>
+</div>
+</div>
+</div>
+<div class="panel panel-default">
+<div class="panel-heading">
+<p class="panel-title">
+<a data-toggle="collapse" data-parent="#workflowr-checks" href="#strongSessioninformationstrongrecorded">
+<span class="glyphicon glyphicon-ok text-success"
+aria-hidden="true"></span> <strong>Session information:</strong>
+recorded </a>
+</p>
+</div>
+<div id="strongSessioninformationstrongrecorded"
+class="panel-collapse collapse">
+<div class="panel-body">
+<p>Great job! Recording the operating system, R version, and package
+versions is critical for reproducibility.</p>
+</div>
+</div>
+</div>
+<div class="panel panel-default">
+<div class="panel-heading">
+<p class="panel-title">
+<a data-toggle="collapse" data-parent="#workflowr-checks" href="#strongCachestrongnone">
+<span class="glyphicon glyphicon-ok text-success"
+aria-hidden="true"></span> <strong>Cache:</strong> none </a>
+</p>
+</div>
+<div id="strongCachestrongnone" class="panel-collapse collapse">
+<div class="panel-body">
+<p>Nice! There were no cached chunks for this analysis, so you can be
+confident that you successfully produced the results during this
+run.</p>
+</div>
+</div>
+</div>
+<div class="panel panel-default">
+<div class="panel-heading">
+<p class="panel-title">
+<a data-toggle="collapse" data-parent="#workflowr-checks" href="#strongFilepathsstrongrelative">
+<span class="glyphicon glyphicon-ok text-success"
+aria-hidden="true"></span> <strong>File paths:</strong> relative </a>
+</p>
+</div>
+<div id="strongFilepathsstrongrelative" class="panel-collapse collapse">
+<div class="panel-body">
+<p>Great job! Using relative paths to the files within your workflowr
+project makes it easier to run your code on other machines.</p>
+</div>
+</div>
+</div>
+<div class="panel panel-default">
+<div class="panel-heading">
+<p class="panel-title">
+<a data-toggle="collapse" data-parent="#workflowr-checks" href="#strongRepositoryversionstrongahrefhttpsgithubcomTheAcetoLabsznurkowskametpathstree7ef3b882220616c6d09e07800565b271dfd90787targetblank7ef3b88a">
+<span class="glyphicon glyphicon-ok text-success"
+aria-hidden="true"></span> <strong>Repository version:</strong>
+<a href="https://github.com/TheAcetoLab/sznurkowska-met-paths/tree/7ef3b882220616c6d09e07800565b271dfd90787" target="_blank">7ef3b88</a>
+</a>
+</p>
+</div>
+<div
+id="strongRepositoryversionstrongahrefhttpsgithubcomTheAcetoLabsznurkowskametpathstree7ef3b882220616c6d09e07800565b271dfd90787targetblank7ef3b88a"
+class="panel-collapse collapse">
+<div class="panel-body">
+<p>
+Great! You are using Git for version control. Tracking code development
+and connecting the code version to the results is critical for
+reproducibility.
+</p>
+<p>
+The results in this page were generated with repository version
+<a href="https://github.com/TheAcetoLab/sznurkowska-met-paths/tree/7ef3b882220616c6d09e07800565b271dfd90787" target="_blank">7ef3b88</a>.
+See the <em>Past versions</em> tab to see a history of the changes made
+to the R Markdown and HTML files.
+</p>
+<p>
+Note that you need to be careful to ensure that all relevant files for
+the analysis have been committed to Git prior to generating the results
+(you can use <code>wflow_publish</code> or
+<code>wflow_git_commit</code>). workflowr only checks the R Markdown
+file, but you know if there are other scripts or data files that it
+depends on. Below is the status of the Git repository when the results
+were generated:
+</p>
+<pre><code>
+Ignored files:
+    Ignored:    .Rhistory
+    Ignored:    .Rproj.user/
+    Ignored:    data/patients/
+    Ignored:    data/seer/
+
+Untracked files:
+    Untracked:  code/R-functions/
+    Untracked:  configuration/
+    Untracked:  workflowr_update.R
+
+Unstaged changes:
+    Modified:   .gitignore
+    Modified:   sznurkowska-met-paths.Rproj
+
+</code></pre>
+<p>
+Note that any generated files, e.g. HTML, png, CSS, etc., are not
+included in this status report because it is ok for generated content to
+have uncommitted changes.
+</p>
+</div>
+</div>
+</div>
+</div>
+<hr>
+</div>
+<div id="versions" class="tab-pane fade">
+<p>
+These are the previous versions of the repository in which changes were
+made to the R Markdown
+(<code>analysis/seer_colorectal_analysis.Rmd</code>) and HTML
+(<code>docs/seer_colorectal_analysis.html</code>) files. If you’ve
+configured a remote Git repository (see <code>?wflow_git_remote</code>),
+click on the hyperlinks in the table below to view the files as they
+were in that past version.
+</p>
+<div class="table-responsive">
+<table class="table table-condensed table-hover">
+<thead>
+<tr>
+<th>
+File
+</th>
+<th>
+Version
+</th>
+<th>
+Author
+</th>
+<th>
+Date
+</th>
+<th>
+Message
+</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>
+Rmd
+</td>
+<td>
+<a href="https://github.com/TheAcetoLab/sznurkowska-met-paths/blob/7ef3b882220616c6d09e07800565b271dfd90787/analysis/seer_colorectal_analysis.Rmd" target="_blank">7ef3b88</a>
+</td>
+<td>
+Francesc Castro-Giner
+</td>
+<td>
+2025-02-06
+</td>
+<td>
+Add patients analysis
+</td>
+</tr>
+</tbody>
+</table>
+</div>
+<hr>
+</div>
+</div>
+</div>
+<div id="load-libraries-additional-functions-and-data"
+class="section level2" number="1">
+<h2><span class="header-section-number">1</span> Load libraries,
+additional functions and data</h2>
+<p>Setup environment</p>
+<pre class="r"><code>knitr::opts_chunk$set(results=&#39;asis&#39;, echo=TRUE, message=FALSE, warning=FALSE, error=FALSE, fig.align = &#39;center&#39;, fig.width = 3.5, fig.asp = 0.618, dpi = 600, dev = c(&quot;png&quot;, &quot;pdf&quot;), fig.showtext = FALSE, engine.opts = list(bash = &quot;-l&quot;))
+
+options(stringsAsFactors = FALSE)</code></pre>
+<p>Load packages</p>
+<pre class="r"><code>library(tidyverse)
+library(showtext)
+library(foreach)
+library(knitr)
+library(kableExtra)
+library(arsenal)
+library(janitor)
+library(colorblindr)
+
+library(survival)
+library(ggsurvfit)
+library(ggbeeswarm)
+library(ggpubr)</code></pre>
+<p>Load ggplot theme</p>
+<pre class="r"><code>source(&quot;./configuration/rmarkdown/ggplot_theme.R&quot;)</code></pre>
+<p>Load palettes</p>
+<pre class="r"><code>source(&quot;./configuration/rmarkdown/color_palettes.R&quot;)</code></pre>
+</div>
+<div id="data-processing" class="section level2" number="2">
+<h2><span class="header-section-number">2</span> Data processing</h2>
+<p>Load data from patients with metastasis at dx and for patients with
+subsequent records after primary breast diagnosis.</p>
+<pre class="r"><code>data_met_dx &lt;- read_csv(file.path(params$data_dir, &#39;seerstat_met_at_dx_colon_and_rectum.csv&#39;))
+data_sub_rec &lt;- read_csv(file.path(params$data_dir, &#39;seerstat_subsequent_records_colon_and_rectum.csv&#39;))
+
+data_colnames_o &lt;- colnames(data_met_dx)
+
+data_met_dx &lt;- clean_names(data_met_dx)
+data_sub_rec &lt;- clean_names(data_sub_rec)
+
+names(data_colnames_o) &lt;- colnames(data_met_dx)
+
+#Selected site names
+primary_sites &lt;- grep(&#39;colon|rectum&#39;, unique(data_met_dx$site_recode_icd_o_3_who_2008), value = TRUE, ignore.case = TRUE)</code></pre>
+<p>Data wrangling for mets at dx</p>
+<pre class="r"><code># Number of metastases at known sites
+data_met_dx$seer_combined_mets_at_dx_sum &lt;- data_met_dx %&gt;% 
+  mutate(
+    seer_combined_mets_at_dx_bone_2010 = ifelse(seer_combined_mets_at_dx_bone_2010 == &#39;Yes&#39;, 1, 0),
+    seer_combined_mets_at_dx_brain_2010 = ifelse(seer_combined_mets_at_dx_brain_2010 == &#39;Yes&#39;, 1, 0),
+    seer_combined_mets_at_dx_liver_2010 = ifelse(seer_combined_mets_at_dx_liver_2010 == &#39;Yes&#39;, 1, 0),
+    seer_combined_mets_at_dx_lung_2010 = ifelse(seer_combined_mets_at_dx_lung_2010 == &#39;Yes&#39;, 1, 0)
+  ) %&gt;% 
+  dplyr::select(starts_with(&quot;seer_combined_mets_at&quot;)) %&gt;% 
+  rowSums()
+  
+
+
+data_met_dx &lt;- data_met_dx %&gt;% 
+  mutate(
+    # Re-class variables
+    survival_months = ifelse(survival_months == &#39;Unknown&#39;, NA, survival_months),
+    survival_months = as.numeric(survival_months),
+    survival_days = 30*survival_months,
+    total_number_of_in_situ_malignant_tumors_for_patient = as.numeric(total_number_of_in_situ_malignant_tumors_for_patient),
+    record_number_recode = as.numeric(record_number_recode),
+    # Site of metastasis
+    seer_combined_mets_at_dx = ifelse(seer_combined_mets_at_dx_sum == 0, &#39;Other&#39;, NA),
+    seer_combined_mets_at_dx = ifelse(seer_combined_mets_at_dx_sum &gt; 1, &#39;Multiple&#39;, seer_combined_mets_at_dx),
+    seer_combined_mets_at_dx = ifelse(seer_combined_mets_at_dx_bone_2010 == &#39;Yes&#39; &amp; seer_combined_mets_at_dx_sum == 1, &#39;Bone&#39;, seer_combined_mets_at_dx),
+    seer_combined_mets_at_dx = ifelse(seer_combined_mets_at_dx_brain_2010 == &#39;Yes&#39; &amp; seer_combined_mets_at_dx_sum == 1, &#39;Brain&#39;, seer_combined_mets_at_dx),
+    seer_combined_mets_at_dx = ifelse(seer_combined_mets_at_dx_liver_2010 == &#39;Yes&#39; &amp; seer_combined_mets_at_dx_sum == 1, &#39;Liver&#39;, seer_combined_mets_at_dx),
+    seer_combined_mets_at_dx = ifelse(seer_combined_mets_at_dx_lung_2010 == &#39;Yes&#39; &amp; seer_combined_mets_at_dx_sum == 1, &#39;Lung&#39;, seer_combined_mets_at_dx),
+    # Other new variables
+    patient_id_record = paste(patient_id, record_number_recode, sep = &quot;_&quot;)
+  )</code></pre>
+<p>Data wrangling for subsequent records after primary breast
+diagnosis</p>
+<pre class="r"><code>data_sub_rec &lt;- data_sub_rec %&gt;% 
+  mutate(
+    # Re-class variables
+    survival_months = ifelse(survival_months == &#39;Unknown&#39;, NA, survival_months),
+    survival_months = as.numeric(survival_months),
+    total_number_of_in_situ_malignant_tumors_for_patient = as.numeric(total_number_of_in_situ_malignant_tumors_for_patient),
+    record_number_recode = as.numeric(record_number_recode),
+    # Other new variables
+    patient_id_record = paste(patient_id, record_number_recode, sep = &quot;_&quot;)
+  )</code></pre>
+<p>Add data to next diagnosis for patients with mets at dx</p>
+<pre class="r"><code>next_pidr &lt;- paste(data_met_dx$patient_id, 1+data_met_dx$record_number_recode, sep = &quot;_&quot;)
+
+next_info &lt;- data_sub_rec %&gt;% 
+  filter(patient_id_record %in% next_pidr) %&gt;% 
+  filter(!site_recode_icd_o_3_who_2008 %in% primary_sites) %&gt;% 
+  dplyr::select(
+    patient_id,
+    patient_id_record, record_number_recode,
+    year_of_diagnosis, 
+    site_recode_icd_o_3_who_2008, survival_months, cod_to_site_recode, 
+    cod_to_site_rec_km, seer_cause_specific_death_classification, 
+    seer_other_cause_of_death_classification, vital_status_recode_study_cutoff_used, 
+    patient_id_record) %&gt;% 
+  rename_with(., function(x) paste0(&#39;next_&#39;, x)) %&gt;% 
+  dplyr::rename(patient_id = next_patient_id) %&gt;% 
+  mutate(prev_patient_id_record = paste(patient_id, next_record_number_recode - 1, sep = &quot;_&quot;)) %&gt;% 
+  left_join(
+    data_met_dx %&gt;% 
+      dplyr::select(patient_id, year_of_diagnosis, seer_combined_mets_at_dx) %&gt;% 
+      rename(prev_year_of_diagnosis = year_of_diagnosis)
+    ) %&gt;% 
+  mutate(
+    years_to_next_diagnosis = next_year_of_diagnosis - prev_year_of_diagnosis,
+    next_site = ifelse(next_site_recode_icd_o_3_who_2008 == &#39;Lung and Bronchus&#39;, &#39;Lung&#39;, &#39;Other&#39;),
+    next_site = ifelse(next_site_recode_icd_o_3_who_2008 == &#39;Kidney and Renal Pelvis&#39;, &#39;Kidney&#39;, next_site),
+    next_site = ifelse(next_site_recode_icd_o_3_who_2008 == &#39;Brain&#39;, &#39;Brain&#39;, next_site),
+    next_site = ifelse(next_site_recode_icd_o_3_who_2008 == &#39;Bones and Joints&#39;, &#39;Bone&#39;, next_site),
+    next_site = ifelse(next_site_recode_icd_o_3_who_2008 == &#39;Liver&#39;, &#39;Liver&#39;, next_site),
+    next_site = ifelse(next_site_recode_icd_o_3_who_2008 == &#39;Intrahepatic Bile Duct&#39;, &#39;Liver&#39;, next_site)
+  ) %&gt;% 
+  dplyr::select(-prev_year_of_diagnosis)
+
+# Remove if next diagnosis happens 5 years after breast diagnosis
+next_info &lt;- next_info %&gt;% 
+  filter(years_to_next_diagnosis &lt;= 5 &amp;
+           next_site != seer_combined_mets_at_dx)
+
+# Join datasets
+data_met_dx &lt;- left_join(data_met_dx, next_info) %&gt;% 
+  mutate(
+    next_diagnosis = ifelse(is.na(next_patient_id_record), &#39;No&#39;, &#39;Yes&#39;),
+    next_event = ifelse(next_diagnosis == &#39;Yes&#39;, &#39;New malignancy&#39;, &#39;None&#39;),
+    next_event = ifelse(next_event == &#39;None&#39; &amp; vital_status_recode_study_cutoff_used == &#39;Dead&#39;, &#39;Death&#39;, next_event)
+  )
+
+# Re-value site
+data_met_dx &lt;- data_met_dx %&gt;% 
+  mutate(
+    next_site = ifelse(next_site_recode_icd_o_3_who_2008 == &#39;Lung and Bronchus&#39;, &#39;Lung&#39;, &#39;Other&#39;),
+    next_site = ifelse(next_site_recode_icd_o_3_who_2008 == &#39;Kidney and Renal Pelvis&#39;, &#39;Kidney&#39;, next_site),
+    next_site = ifelse(next_site_recode_icd_o_3_who_2008 == &#39;Brain&#39;, &#39;Brain&#39;, next_site),
+    next_site = ifelse(next_site_recode_icd_o_3_who_2008 == &#39;Bones and Joints&#39;, &#39;Bone&#39;, next_site),
+    next_site = ifelse(next_site_recode_icd_o_3_who_2008 == &#39;Liver&#39;, &#39;Liver&#39;, next_site),
+    next_site = ifelse(next_site_recode_icd_o_3_who_2008 == &#39;Intrahepatic Bile Duct&#39;, &#39;Liver&#39;, next_site)
+  )</code></pre>
+<p>Process data for non-metastatic patients with subsequent records</p>
+<pre class="r"><code># Select breast non-metastatic primaries
+data_m0 &lt;- data_sub_rec %&gt;% 
+  filter(first_malignant_primary_indicator == &#39;Yes&#39;) %&gt;% 
+  filter(site_recode_icd_o_3_who_2008 %in% primary_sites) %&gt;% 
+  filter(
+    grepl(&quot;^M0&quot;, derived_ajcc_m_7th_ed_2010_2015) |
+    grepl(&quot;^c0&quot;, derived_seer_combined_m_2016_2017) |
+    grepl(&quot;^M0&quot;, derived_eod_2018_m_2018)
+  )
+# Select first metastases
+next_pidr &lt;- paste(data_m0$patient_id, 1+data_m0$record_number_recode, sep = &quot;_&quot;)
+data_m0_first_mets &lt;- data_sub_rec %&gt;%
+  filter(patient_id_record %in% next_pidr) %&gt;% 
+  filter(!site_recode_icd_o_3_who_2008 %in% primary_sites) %&gt;% 
+  left_join(
+    data_m0 %&gt;% dplyr::select(patient_id, year_of_diagnosis) %&gt;% rename(primary_year_of_diagnosis = year_of_diagnosis)
+  ) %&gt;% 
+  mutate(years_from_primary = year_of_diagnosis - primary_year_of_diagnosis) %&gt;% 
+  filter(years_from_primary &lt;= 5)
+
+# Select second mets
+next_pidr &lt;- paste(data_m0_first_mets$patient_id, 1+data_m0_first_mets$record_number_recode, sep = &quot;_&quot;)
+
+next_info &lt;- data_sub_rec %&gt;% 
+  filter(patient_id_record %in% next_pidr) %&gt;% 
+  filter(!site_recode_icd_o_3_who_2008 %in% primary_sites) %&gt;% 
+  dplyr::select(
+    patient_id,
+    patient_id_record, record_number_recode,
+    year_of_diagnosis, 
+    site_recode_icd_o_3_who_2008, survival_months, cod_to_site_recode, 
+    cod_to_site_rec_km, seer_cause_specific_death_classification, 
+    seer_other_cause_of_death_classification, vital_status_recode_study_cutoff_used, 
+    patient_id_record) %&gt;% 
+  rename_with(., function(x) paste0(&#39;next_&#39;, x)) %&gt;% 
+  dplyr::rename(patient_id = next_patient_id) %&gt;% 
+  mutate(prev_patient_id_record = paste(patient_id, next_record_number_recode - 1, sep = &quot;_&quot;)) %&gt;% 
+  left_join(
+    data_m0_first_mets %&gt;% 
+      dplyr::select(patient_id_record, year_of_diagnosis) %&gt;% 
+      rename(prev_patient_id_record = patient_id_record, prev_year_of_diagnosis = year_of_diagnosis)
+    ) %&gt;% 
+  mutate(
+    years_to_next_diagnosis = next_year_of_diagnosis - prev_year_of_diagnosis
+  )
+
+# Remove if next diagnosis happens 5 years after breast diagnosis
+next_info &lt;- next_info %&gt;% filter(years_to_next_diagnosis &lt;= 5)
+
+# Join datasets
+data_m0_first_mets &lt;- left_join(data_m0_first_mets, next_info) %&gt;% 
+  mutate(
+    next_diagnosis = ifelse(is.na(next_patient_id_record), &#39;No&#39;, &#39;Yes&#39;),
+    next_event = ifelse(next_diagnosis == &#39;Yes&#39;, &#39;New malignancy&#39;, &#39;None&#39;),
+    next_event = ifelse(next_event == &#39;None&#39; &amp; vital_status_recode_study_cutoff_used == &#39;Dead&#39;, &#39;Death&#39;, next_event)
+  )
+
+# Re-value site
+data_m0_first_mets &lt;- data_m0_first_mets %&gt;% 
+  mutate(
+    site = ifelse(site_recode_icd_o_3_who_2008 == &#39;Lung and Bronchus&#39;, &#39;Lung&#39;, &#39;Other&#39;),
+    site = ifelse(site_recode_icd_o_3_who_2008 == &#39;Kidney and Renal Pelvis&#39;, &#39;Kidney&#39;, site),
+    site = ifelse(site_recode_icd_o_3_who_2008 == &#39;Brain&#39;, &#39;Brain&#39;, site),
+    site = ifelse(site_recode_icd_o_3_who_2008 == &#39;Bones and Joints&#39;, &#39;Bone&#39;, site),
+    site = ifelse(site_recode_icd_o_3_who_2008 == &#39;Liver&#39;, &#39;Liver&#39;, site),
+    site = ifelse(site_recode_icd_o_3_who_2008 == &#39;Intrahepatic Bile Duct&#39;, &#39;Liver&#39;, site)
+  )</code></pre>
+</div>
+<div id="patients-characteristics" class="section level2" number="3">
+<h2><span class="header-section-number">3</span> Patients
+characteristics</h2>
+<div id="patients-with-metastases-at-diagnosis" class="section level3"
+number="3.1">
+<h3><span class="header-section-number">3.1</span> Patients with
+metastases at diagnosis</h3>
+<pre class="r"><code># tab_labels &lt;- data_met_dx %&gt;% dplyr::select(-patient_id) %&gt;% colnames()
+tab_labels &lt;- c(
+  &#39;year_of_diagnosis&#39;, &#39;age_recode_with_1_year_olds&#39;, 
+  &#39;total_number_of_in_situ_malignant_tumors_for_patient&#39;, &#39;survival_months&#39;, 
+  &#39;vital_status_recode_study_cutoff_used&#39;, 
+  &quot;next_diagnosis&quot;, &quot;years_to_next_diagnosis&quot;, &quot;next_site&quot;)
+use_formula &lt;- as.formula(paste0(&#39;seer_combined_mets_at_dx ~&#39;, paste(tab_labels, collapse = &#39;+&#39;)))
+res_tab &lt;- tableby(use_formula, data=data_met_dx) 
+summary(res_tab, pfootnote = TRUE)</code></pre>
+<table style="width:100%;">
+<colgroup>
+<col width="26%" />
+<col width="9%" />
+<col width="9%" />
+<col width="9%" />
+<col width="9%" />
+<col width="9%" />
+<col width="9%" />
+<col width="9%" />
+<col width="5%" />
+</colgroup>
+<thead>
+<tr class="header">
+<th align="left"></th>
+<th align="center">Bone (N=298)</th>
+<th align="center">Brain (N=106)</th>
+<th align="center">Liver (N=13615)</th>
+<th align="center">Lung (N=1899)</th>
+<th align="center">Multiple (N=5489)</th>
+<th align="center">Other (N=6578)</th>
+<th align="center">Total (N=27985)</th>
+<th align="right">p value</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td align="left"><strong>year_of_diagnosis</strong></td>
+<td align="center"></td>
+<td align="center"></td>
+<td align="center"></td>
+<td align="center"></td>
+<td align="center"></td>
+<td align="center"></td>
+<td align="center"></td>
+<td align="right">&lt; 0.001<sup>1</sup></td>
+</tr>
+<tr class="even">
+<td align="left">   Mean (SD)</td>
+<td align="center">2015.054 (2.810)</td>
+<td align="center">2013.906 (2.745)</td>
+<td align="center">2014.504 (2.876)</td>
+<td align="center">2014.865 (2.815)</td>
+<td align="center">2014.769 (2.820)</td>
+<td align="center">2014.565 (2.935)</td>
+<td align="center">2014.598 (2.877)</td>
+<td align="right"></td>
+</tr>
+<tr class="odd">
+<td align="left">   Range</td>
+<td align="center">2010.000 - 2019.000</td>
+<td align="center">2010.000 - 2019.000</td>
+<td align="center">2010.000 - 2019.000</td>
+<td align="center">2010.000 - 2019.000</td>
+<td align="center">2010.000 - 2019.000</td>
+<td align="center">2010.000 - 2019.000</td>
+<td align="center">2010.000 - 2019.000</td>
+<td align="right"></td>
+</tr>
+<tr class="even">
+<td align="left"><strong>age_recode_with_1_year_olds</strong></td>
+<td align="center"></td>
+<td align="center"></td>
+<td align="center"></td>
+<td align="center"></td>
+<td align="center"></td>
+<td align="center"></td>
+<td align="center"></td>
+<td align="right">&lt; 0.001<sup>2</sup></td>
+</tr>
+<tr class="odd">
+<td align="left">   20-24 years</td>
+<td align="center">1 (0.3%)</td>
+<td align="center">0 (0.0%)</td>
+<td align="center">19 (0.1%)</td>
+<td align="center">2 (0.1%)</td>
+<td align="center">5 (0.1%)</td>
+<td align="center">22 (0.3%)</td>
+<td align="center">49 (0.2%)</td>
+<td align="right"></td>
+</tr>
+<tr class="even">
+<td align="left">   25-29 years</td>
+<td align="center">3 (1.0%)</td>
+<td align="center">0 (0.0%)</td>
+<td align="center">92 (0.7%)</td>
+<td align="center">11 (0.6%)</td>
+<td align="center">26 (0.5%)</td>
+<td align="center">37 (0.6%)</td>
+<td align="center">169 (0.6%)</td>
+<td align="right"></td>
+</tr>
+<tr class="odd">
+<td align="left">   30-34 years</td>
+<td align="center">4 (1.3%)</td>
+<td align="center">0 (0.0%)</td>
+<td align="center">170 (1.2%)</td>
+<td align="center">22 (1.2%)</td>
+<td align="center">79 (1.4%)</td>
+<td align="center">92 (1.4%)</td>
+<td align="center">367 (1.3%)</td>
+<td align="right"></td>
+</tr>
+<tr class="even">
+<td align="left">   35-39 years</td>
+<td align="center">6 (2.0%)</td>
+<td align="center">4 (3.8%)</td>
+<td align="center">327 (2.4%)</td>
+<td align="center">40 (2.1%)</td>
+<td align="center">104 (1.9%)</td>
+<td align="center">190 (2.9%)</td>
+<td align="center">671 (2.4%)</td>
+<td align="right"></td>
+</tr>
+<tr class="odd">
+<td align="left">   40-44 years</td>
+<td align="center">10 (3.4%)</td>
+<td align="center">4 (3.8%)</td>
+<td align="center">579 (4.3%)</td>
+<td align="center">68 (3.6%)</td>
+<td align="center">211 (3.8%)</td>
+<td align="center">295 (4.5%)</td>
+<td align="center">1167 (4.2%)</td>
+<td align="right"></td>
+</tr>
+<tr class="even">
+<td align="left">   45-49 years</td>
+<td align="center">12 (4.0%)</td>
+<td align="center">6 (5.7%)</td>
+<td align="center">1018 (7.5%)</td>
+<td align="center">117 (6.2%)</td>
+<td align="center">362 (6.6%)</td>
+<td align="center">498 (7.6%)</td>
+<td align="center">2013 (7.2%)</td>
+<td align="right"></td>
+</tr>
+<tr class="odd">
+<td align="left">   50-54 years</td>
+<td align="center">28 (9.4%)</td>
+<td align="center">7 (6.6%)</td>
+<td align="center">1337 (9.8%)</td>
+<td align="center">162 (8.5%)</td>
+<td align="center">502 (9.1%)</td>
+<td align="center">626 (9.5%)</td>
+<td align="center">2662 (9.5%)</td>
+<td align="right"></td>
+</tr>
+<tr class="even">
+<td align="left">   55-59 years</td>
+<td align="center">39 (13.1%)</td>
+<td align="center">10 (9.4%)</td>
+<td align="center">1506 (11.1%)</td>
+<td align="center">174 (9.2%)</td>
+<td align="center">679 (12.4%)</td>
+<td align="center">699 (10.6%)</td>
+<td align="center">3107 (11.1%)</td>
+<td align="right"></td>
+</tr>
+<tr class="odd">
+<td align="left">   60-64 years</td>
+<td align="center">43 (14.4%)</td>
+<td align="center">17 (16.0%)</td>
+<td align="center">1526 (11.2%)</td>
+<td align="center">222 (11.7%)</td>
+<td align="center">727 (13.2%)</td>
+<td align="center">817 (12.4%)</td>
+<td align="center">3352 (12.0%)</td>
+<td align="right"></td>
+</tr>
+<tr class="even">
+<td align="left">   65-69 years</td>
+<td align="center">25 (8.4%)</td>
+<td align="center">17 (16.0%)</td>
+<td align="center">1492 (11.0%)</td>
+<td align="center">230 (12.1%)</td>
+<td align="center">704 (12.8%)</td>
+<td align="center">769 (11.7%)</td>
+<td align="center">3237 (11.6%)</td>
+<td align="right"></td>
+</tr>
+<tr class="odd">
+<td align="left">   70-74 years</td>
+<td align="center">29 (9.7%)</td>
+<td align="center">13 (12.3%)</td>
+<td align="center">1409 (10.3%)</td>
+<td align="center">215 (11.3%)</td>
+<td align="center">610 (11.1%)</td>
+<td align="center">699 (10.6%)</td>
+<td align="center">2975 (10.6%)</td>
+<td align="right"></td>
+</tr>
+<tr class="even">
+<td align="left">   75-79 years</td>
+<td align="center">28 (9.4%)</td>
+<td align="center">7 (6.6%)</td>
+<td align="center">1298 (9.5%)</td>
+<td align="center">190 (10.0%)</td>
+<td align="center">483 (8.8%)</td>
+<td align="center">585 (8.9%)</td>
+<td align="center">2591 (9.3%)</td>
+<td align="right"></td>
+</tr>
+<tr class="odd">
+<td align="left">   80-84 years</td>
+<td align="center">29 (9.7%)</td>
+<td align="center">6 (5.7%)</td>
+<td align="center">1257 (9.2%)</td>
+<td align="center">188 (9.9%)</td>
+<td align="center">454 (8.3%)</td>
+<td align="center">533 (8.1%)</td>
+<td align="center">2467 (8.8%)</td>
+<td align="right"></td>
+</tr>
+<tr class="even">
+<td align="left">   85+ years</td>
+<td align="center">41 (13.8%)</td>
+<td align="center">15 (14.2%)</td>
+<td align="center">1585 (11.6%)</td>
+<td align="center">258 (13.6%)</td>
+<td align="center">543 (9.9%)</td>
+<td align="center">716 (10.9%)</td>
+<td align="center">3158 (11.3%)</td>
+<td align="right"></td>
+</tr>
+<tr class="odd">
+<td
+align="left"><strong>total_number_of_in_situ_malignant_tumors_for_patient</strong></td>
+<td align="center"></td>
+<td align="center"></td>
+<td align="center"></td>
+<td align="center"></td>
+<td align="center"></td>
+<td align="center"></td>
+<td align="center"></td>
+<td align="right">&lt; 0.001<sup>1</sup></td>
+</tr>
+<tr class="even">
+<td align="left">   Mean (SD)</td>
+<td align="center">1.081 (0.285)</td>
+<td align="center">1.057 (0.232)</td>
+<td align="center">1.055 (0.252)</td>
+<td align="center">1.070 (0.298)</td>
+<td align="center">1.041 (0.211)</td>
+<td align="center">1.074 (0.279)</td>
+<td align="center">1.058 (0.255)</td>
+<td align="right"></td>
+</tr>
+<tr class="odd">
+<td align="left">   Range</td>
+<td align="center">1.000 - 3.000</td>
+<td align="center">1.000 - 2.000</td>
+<td align="center">1.000 - 5.000</td>
+<td align="center">1.000 - 5.000</td>
+<td align="center">1.000 - 4.000</td>
+<td align="center">1.000 - 3.000</td>
+<td align="center">1.000 - 5.000</td>
+<td align="right"></td>
+</tr>
+<tr class="even">
+<td align="left"><strong>survival_months</strong></td>
+<td align="center"></td>
+<td align="center"></td>
+<td align="center"></td>
+<td align="center"></td>
+<td align="center"></td>
+<td align="center"></td>
+<td align="center"></td>
+<td align="right">&lt; 0.001<sup>1</sup></td>
+</tr>
+<tr class="odd">
+<td align="left">   N-Miss</td>
+<td align="center">0</td>
+<td align="center">0</td>
+<td align="center">7</td>
+<td align="center">2</td>
+<td align="center">8</td>
+<td align="center">4</td>
+<td align="center">21</td>
+<td align="right"></td>
+</tr>
+<tr class="even">
+<td align="left">   Mean (SD)</td>
+<td align="center">9.748 (13.355)</td>
+<td align="center">12.547 (18.628)</td>
+<td align="center">17.775 (21.762)</td>
+<td align="center">20.260 (21.838)</td>
+<td align="center">11.296 (14.070)</td>
+<td align="center">21.998 (25.019)</td>
+<td align="center">17.561 (21.575)</td>
+<td align="right"></td>
+</tr>
+<tr class="odd">
+<td align="left">   Range</td>
+<td align="center">0.000 - 97.000</td>
+<td align="center">0.000 - 101.000</td>
+<td align="center">0.000 - 119.000</td>
+<td align="center">0.000 - 119.000</td>
+<td align="center">0.000 - 116.000</td>
+<td align="center">0.000 - 119.000</td>
+<td align="center">0.000 - 119.000</td>
+<td align="right"></td>
+</tr>
+<tr class="even">
+<td
+align="left"><strong>vital_status_recode_study_cutoff_used</strong></td>
+<td align="center"></td>
+<td align="center"></td>
+<td align="center"></td>
+<td align="center"></td>
+<td align="center"></td>
+<td align="center"></td>
+<td align="center"></td>
+<td align="right">&lt; 0.001<sup>2</sup></td>
+</tr>
+<tr class="odd">
+<td align="left">   Alive</td>
+<td align="center">51 (17.1%)</td>
+<td align="center">13 (12.3%)</td>
+<td align="center">3178 (23.3%)</td>
+<td align="center">574 (30.2%)</td>
+<td align="center">785 (14.3%)</td>
+<td align="center">2094 (31.8%)</td>
+<td align="center">6695 (23.9%)</td>
+<td align="right"></td>
+</tr>
+<tr class="even">
+<td align="left">   Dead</td>
+<td align="center">247 (82.9%)</td>
+<td align="center">93 (87.7%)</td>
+<td align="center">10437 (76.7%)</td>
+<td align="center">1325 (69.8%)</td>
+<td align="center">4704 (85.7%)</td>
+<td align="center">4484 (68.2%)</td>
+<td align="center">21290 (76.1%)</td>
+<td align="right"></td>
+</tr>
+<tr class="odd">
+<td align="left"><strong>next_diagnosis</strong></td>
+<td align="center"></td>
+<td align="center"></td>
+<td align="center"></td>
+<td align="center"></td>
+<td align="center"></td>
+<td align="center"></td>
+<td align="center"></td>
+<td align="right">&lt; 0.001<sup>2</sup></td>
+</tr>
+<tr class="even">
+<td align="left">   No</td>
+<td align="center">285 (95.6%)</td>
+<td align="center">103 (97.2%)</td>
+<td align="center">13322 (97.8%)</td>
+<td align="center">1854 (97.6%)</td>
+<td align="center">5398 (98.3%)</td>
+<td align="center">6547 (99.5%)</td>
+<td align="center">27509 (98.3%)</td>
+<td align="right"></td>
+</tr>
+<tr class="odd">
+<td align="left">   Yes</td>
+<td align="center">13 (4.4%)</td>
+<td align="center">3 (2.8%)</td>
+<td align="center">293 (2.2%)</td>
+<td align="center">45 (2.4%)</td>
+<td align="center">91 (1.7%)</td>
+<td align="center">31 (0.5%)</td>
+<td align="center">476 (1.7%)</td>
+<td align="right"></td>
+</tr>
+<tr class="even">
+<td align="left"><strong>years_to_next_diagnosis</strong></td>
+<td align="center"></td>
+<td align="center"></td>
+<td align="center"></td>
+<td align="center"></td>
+<td align="center"></td>
+<td align="center"></td>
+<td align="center"></td>
+<td align="right">0.027<sup>1</sup></td>
+</tr>
+<tr class="odd">
+<td align="left">   N-Miss</td>
+<td align="center">285</td>
+<td align="center">103</td>
+<td align="center">13322</td>
+<td align="center">1854</td>
+<td align="center">5398</td>
+<td align="center">6547</td>
+<td align="center">27509</td>
+<td align="right"></td>
+</tr>
+<tr class="even">
+<td align="left">   Mean (SD)</td>
+<td align="center">0.385 (0.768)</td>
+<td align="center">0.000 (0.000)</td>
+<td align="center">0.771 (1.303)</td>
+<td align="center">0.556 (1.216)</td>
+<td align="center">0.319 (0.630)</td>
+<td align="center">0.613 (0.761)</td>
+<td align="center">0.639 (1.159)</td>
+<td align="right"></td>
+</tr>
+<tr class="odd">
+<td align="left">   Range</td>
+<td align="center">0.000 - 2.000</td>
+<td align="center">0.000 - 0.000</td>
+<td align="center">0.000 - 5.000</td>
+<td align="center">0.000 - 5.000</td>
+<td align="center">0.000 - 3.000</td>
+<td align="center">0.000 - 3.000</td>
+<td align="center">0.000 - 5.000</td>
+<td align="right"></td>
+</tr>
+<tr class="even">
+<td align="left"><strong>next_site</strong></td>
+<td align="center"></td>
+<td align="center"></td>
+<td align="center"></td>
+<td align="center"></td>
+<td align="center"></td>
+<td align="center"></td>
+<td align="center"></td>
+<td align="right">&lt; 0.001<sup>2</sup></td>
+</tr>
+<tr class="odd">
+<td align="left">   N-Miss</td>
+<td align="center">285</td>
+<td align="center">103</td>
+<td align="center">13322</td>
+<td align="center">1854</td>
+<td align="center">5398</td>
+<td align="center">6547</td>
+<td align="center">27509</td>
+<td align="right"></td>
+</tr>
+<tr class="even">
+<td align="left">   Brain</td>
+<td align="center">0 (0.0%)</td>
+<td align="center">0 (0.0%)</td>
+<td align="center">1 (0.3%)</td>
+<td align="center">0 (0.0%)</td>
+<td align="center">0 (0.0%)</td>
+<td align="center">1 (3.2%)</td>
+<td align="center">2 (0.4%)</td>
+<td align="right"></td>
+</tr>
+<tr class="odd">
+<td align="left">   Kidney</td>
+<td align="center">1 (7.7%)</td>
+<td align="center">0 (0.0%)</td>
+<td align="center">12 (4.1%)</td>
+<td align="center">3 (6.7%)</td>
+<td align="center">5 (5.5%)</td>
+<td align="center">7 (22.6%)</td>
+<td align="center">28 (5.9%)</td>
+<td align="right"></td>
+</tr>
+<tr class="even">
+<td align="left">   Liver</td>
+<td align="center">0 (0.0%)</td>
+<td align="center">0 (0.0%)</td>
+<td align="center">0 (0.0%)</td>
+<td align="center">1 (2.2%)</td>
+<td align="center">0 (0.0%)</td>
+<td align="center">2 (6.5%)</td>
+<td align="center">3 (0.6%)</td>
+<td align="right"></td>
+</tr>
+<tr class="odd">
+<td align="left">   Lung</td>
+<td align="center">1 (7.7%)</td>
+<td align="center">2 (66.7%)</td>
+<td align="center">27 (9.2%)</td>
+<td align="center">0 (0.0%)</td>
+<td align="center">9 (9.9%)</td>
+<td align="center">21 (67.7%)</td>
+<td align="center">60 (12.6%)</td>
+<td align="right"></td>
+</tr>
+<tr class="even">
+<td align="left">   Other</td>
+<td align="center">11 (84.6%)</td>
+<td align="center">1 (33.3%)</td>
+<td align="center">253 (86.3%)</td>
+<td align="center">41 (91.1%)</td>
+<td align="center">77 (84.6%)</td>
+<td align="center">0 (0.0%)</td>
+<td align="center">383 (80.5%)</td>
+<td align="right"></td>
+</tr>
+</tbody>
+</table>
+<ol style="list-style-type: decimal">
+<li>Linear Model ANOVA</li>
+<li>Pearson’s Chi-squared test</li>
+</ol>
+<pre class="r"><code>tab_labels &lt;- c(
+  &quot;next_diagnosis&quot;, &quot;next_event&quot;, &quot;years_to_next_diagnosis&quot;, &quot;next_site&quot;, &#39;survival_months&#39;)
+use_formula &lt;- as.formula(paste0(&#39;seer_combined_mets_at_dx ~&#39;, paste(tab_labels, collapse = &#39;+&#39;)))
+res_tab &lt;- tableby(use_formula, data=data_met_dx) 
+summary(res_tab, pfootnote = TRUE)</code></pre>
+<table>
+<colgroup>
+<col width="20%" />
+<col width="9%" />
+<col width="10%" />
+<col width="10%" />
+<col width="10%" />
+<col width="11%" />
+<col width="10%" />
+<col width="10%" />
+<col width="6%" />
+</colgroup>
+<thead>
+<tr class="header">
+<th align="left"></th>
+<th align="center">Bone (N=298)</th>
+<th align="center">Brain (N=106)</th>
+<th align="center">Liver (N=13615)</th>
+<th align="center">Lung (N=1899)</th>
+<th align="center">Multiple (N=5489)</th>
+<th align="center">Other (N=6578)</th>
+<th align="center">Total (N=27985)</th>
+<th align="right">p value</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td align="left"><strong>next_diagnosis</strong></td>
+<td align="center"></td>
+<td align="center"></td>
+<td align="center"></td>
+<td align="center"></td>
+<td align="center"></td>
+<td align="center"></td>
+<td align="center"></td>
+<td align="right">&lt; 0.001<sup>1</sup></td>
+</tr>
+<tr class="even">
+<td align="left">   No</td>
+<td align="center">285 (95.6%)</td>
+<td align="center">103 (97.2%)</td>
+<td align="center">13322 (97.8%)</td>
+<td align="center">1854 (97.6%)</td>
+<td align="center">5398 (98.3%)</td>
+<td align="center">6547 (99.5%)</td>
+<td align="center">27509 (98.3%)</td>
+<td align="right"></td>
+</tr>
+<tr class="odd">
+<td align="left">   Yes</td>
+<td align="center">13 (4.4%)</td>
+<td align="center">3 (2.8%)</td>
+<td align="center">293 (2.2%)</td>
+<td align="center">45 (2.4%)</td>
+<td align="center">91 (1.7%)</td>
+<td align="center">31 (0.5%)</td>
+<td align="center">476 (1.7%)</td>
+<td align="right"></td>
+</tr>
+<tr class="even">
+<td align="left"><strong>next_event</strong></td>
+<td align="center"></td>
+<td align="center"></td>
+<td align="center"></td>
+<td align="center"></td>
+<td align="center"></td>
+<td align="center"></td>
+<td align="center"></td>
+<td align="right">&lt; 0.001<sup>1</sup></td>
+</tr>
+<tr class="odd">
+<td align="left">   Death</td>
+<td align="center">236 (79.2%)</td>
+<td align="center">91 (85.8%)</td>
+<td align="center">10235 (75.2%)</td>
+<td align="center">1298 (68.4%)</td>
+<td align="center">4628 (84.3%)</td>
+<td align="center">4458 (67.8%)</td>
+<td align="center">20946 (74.8%)</td>
+<td align="right"></td>
+</tr>
+<tr class="even">
+<td align="left">   New malignancy</td>
+<td align="center">13 (4.4%)</td>
+<td align="center">3 (2.8%)</td>
+<td align="center">293 (2.2%)</td>
+<td align="center">45 (2.4%)</td>
+<td align="center">91 (1.7%)</td>
+<td align="center">31 (0.5%)</td>
+<td align="center">476 (1.7%)</td>
+<td align="right"></td>
+</tr>
+<tr class="odd">
+<td align="left">   None</td>
+<td align="center">49 (16.4%)</td>
+<td align="center">12 (11.3%)</td>
+<td align="center">3087 (22.7%)</td>
+<td align="center">556 (29.3%)</td>
+<td align="center">770 (14.0%)</td>
+<td align="center">2089 (31.8%)</td>
+<td align="center">6563 (23.5%)</td>
+<td align="right"></td>
+</tr>
+<tr class="even">
+<td align="left"><strong>years_to_next_diagnosis</strong></td>
+<td align="center"></td>
+<td align="center"></td>
+<td align="center"></td>
+<td align="center"></td>
+<td align="center"></td>
+<td align="center"></td>
+<td align="center"></td>
+<td align="right">0.027<sup>2</sup></td>
+</tr>
+<tr class="odd">
+<td align="left">   N-Miss</td>
+<td align="center">285</td>
+<td align="center">103</td>
+<td align="center">13322</td>
+<td align="center">1854</td>
+<td align="center">5398</td>
+<td align="center">6547</td>
+<td align="center">27509</td>
+<td align="right"></td>
+</tr>
+<tr class="even">
+<td align="left">   Mean (SD)</td>
+<td align="center">0.385 (0.768)</td>
+<td align="center">0.000 (0.000)</td>
+<td align="center">0.771 (1.303)</td>
+<td align="center">0.556 (1.216)</td>
+<td align="center">0.319 (0.630)</td>
+<td align="center">0.613 (0.761)</td>
+<td align="center">0.639 (1.159)</td>
+<td align="right"></td>
+</tr>
+<tr class="odd">
+<td align="left">   Range</td>
+<td align="center">0.000 - 2.000</td>
+<td align="center">0.000 - 0.000</td>
+<td align="center">0.000 - 5.000</td>
+<td align="center">0.000 - 5.000</td>
+<td align="center">0.000 - 3.000</td>
+<td align="center">0.000 - 3.000</td>
+<td align="center">0.000 - 5.000</td>
+<td align="right"></td>
+</tr>
+<tr class="even">
+<td align="left"><strong>next_site</strong></td>
+<td align="center"></td>
+<td align="center"></td>
+<td align="center"></td>
+<td align="center"></td>
+<td align="center"></td>
+<td align="center"></td>
+<td align="center"></td>
+<td align="right">&lt; 0.001<sup>1</sup></td>
+</tr>
+<tr class="odd">
+<td align="left">   N-Miss</td>
+<td align="center">285</td>
+<td align="center">103</td>
+<td align="center">13322</td>
+<td align="center">1854</td>
+<td align="center">5398</td>
+<td align="center">6547</td>
+<td align="center">27509</td>
+<td align="right"></td>
+</tr>
+<tr class="even">
+<td align="left">   Brain</td>
+<td align="center">0 (0.0%)</td>
+<td align="center">0 (0.0%)</td>
+<td align="center">1 (0.3%)</td>
+<td align="center">0 (0.0%)</td>
+<td align="center">0 (0.0%)</td>
+<td align="center">1 (3.2%)</td>
+<td align="center">2 (0.4%)</td>
+<td align="right"></td>
+</tr>
+<tr class="odd">
+<td align="left">   Kidney</td>
+<td align="center">1 (7.7%)</td>
+<td align="center">0 (0.0%)</td>
+<td align="center">12 (4.1%)</td>
+<td align="center">3 (6.7%)</td>
+<td align="center">5 (5.5%)</td>
+<td align="center">7 (22.6%)</td>
+<td align="center">28 (5.9%)</td>
+<td align="right"></td>
+</tr>
+<tr class="even">
+<td align="left">   Liver</td>
+<td align="center">0 (0.0%)</td>
+<td align="center">0 (0.0%)</td>
+<td align="center">0 (0.0%)</td>
+<td align="center">1 (2.2%)</td>
+<td align="center">0 (0.0%)</td>
+<td align="center">2 (6.5%)</td>
+<td align="center">3 (0.6%)</td>
+<td align="right"></td>
+</tr>
+<tr class="odd">
+<td align="left">   Lung</td>
+<td align="center">1 (7.7%)</td>
+<td align="center">2 (66.7%)</td>
+<td align="center">27 (9.2%)</td>
+<td align="center">0 (0.0%)</td>
+<td align="center">9 (9.9%)</td>
+<td align="center">21 (67.7%)</td>
+<td align="center">60 (12.6%)</td>
+<td align="right"></td>
+</tr>
+<tr class="even">
+<td align="left">   Other</td>
+<td align="center">11 (84.6%)</td>
+<td align="center">1 (33.3%)</td>
+<td align="center">253 (86.3%)</td>
+<td align="center">41 (91.1%)</td>
+<td align="center">77 (84.6%)</td>
+<td align="center">0 (0.0%)</td>
+<td align="center">383 (80.5%)</td>
+<td align="right"></td>
+</tr>
+<tr class="odd">
+<td align="left"><strong>survival_months</strong></td>
+<td align="center"></td>
+<td align="center"></td>
+<td align="center"></td>
+<td align="center"></td>
+<td align="center"></td>
+<td align="center"></td>
+<td align="center"></td>
+<td align="right">&lt; 0.001<sup>2</sup></td>
+</tr>
+<tr class="even">
+<td align="left">   N-Miss</td>
+<td align="center">0</td>
+<td align="center">0</td>
+<td align="center">7</td>
+<td align="center">2</td>
+<td align="center">8</td>
+<td align="center">4</td>
+<td align="center">21</td>
+<td align="right"></td>
+</tr>
+<tr class="odd">
+<td align="left">   Mean (SD)</td>
+<td align="center">9.748 (13.355)</td>
+<td align="center">12.547 (18.628)</td>
+<td align="center">17.775 (21.762)</td>
+<td align="center">20.260 (21.838)</td>
+<td align="center">11.296 (14.070)</td>
+<td align="center">21.998 (25.019)</td>
+<td align="center">17.561 (21.575)</td>
+<td align="right"></td>
+</tr>
+<tr class="even">
+<td align="left">   Range</td>
+<td align="center">0.000 - 97.000</td>
+<td align="center">0.000 - 101.000</td>
+<td align="center">0.000 - 119.000</td>
+<td align="center">0.000 - 119.000</td>
+<td align="center">0.000 - 116.000</td>
+<td align="center">0.000 - 119.000</td>
+<td align="center">0.000 - 119.000</td>
+<td align="right"></td>
+</tr>
+</tbody>
+</table>
+<ol style="list-style-type: decimal">
+<li>Pearson’s Chi-squared test</li>
+<li>Linear Model ANOVA</li>
+</ol>
+</div>
+<div id="patients-without-metastases-at-diagnosis"
+class="section level3" number="3.2">
+<h3><span class="header-section-number">3.2</span> Patients without
+metastases at diagnosis</h3>
+<pre class="r"><code># tab_labels &lt;- data_met_dx %&gt;% dplyr::select(-patient_id) %&gt;% colnames()
+tab_labels &lt;- c(
+  &#39;year_of_diagnosis&#39;, &#39;age_recode_with_1_year_olds&#39;, 
+  &#39;total_number_of_in_situ_malignant_tumors_for_patient&#39;, &#39;survival_months&#39;, 
+  &#39;vital_status_recode_study_cutoff_used&#39;, 
+  &quot;next_diagnosis&quot;, &quot;years_to_next_diagnosis&quot;, &quot;next_cod_to_site_recode&quot;)
+use_formula &lt;- as.formula(paste0(&#39;site ~&#39;, paste(tab_labels, collapse = &#39;+&#39;)))
+res_tab &lt;- tableby(use_formula, data=data_m0_first_mets) 
+summary(res_tab, pfootnote = TRUE)</code></pre>
+<table style="width:100%;">
+<colgroup>
+<col width="31%" />
+<col width="9%" />
+<col width="9%" />
+<col width="9%" />
+<col width="9%" />
+<col width="9%" />
+<col width="9%" />
+<col width="9%" />
+<col width="4%" />
+</colgroup>
+<thead>
+<tr class="header">
+<th align="left"></th>
+<th align="center">Bone (N=7)</th>
+<th align="center">Brain (N=52)</th>
+<th align="center">Kidney (N=694)</th>
+<th align="center">Liver (N=240)</th>
+<th align="center">Lung (N=1435)</th>
+<th align="center">Other (N=7547)</th>
+<th align="center">Total (N=9975)</th>
+<th align="right">p value</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td align="left"><strong>year_of_diagnosis</strong></td>
+<td align="center"></td>
+<td align="center"></td>
+<td align="center"></td>
+<td align="center"></td>
+<td align="center"></td>
+<td align="center"></td>
+<td align="center"></td>
+<td align="right">&lt; 0.001<sup>1</sup></td>
+</tr>
+<tr class="even">
+<td align="left">   Mean (SD)</td>
+<td align="center">2016.571 (2.878)</td>
+<td align="center">2015.500 (2.305)</td>
+<td align="center">2014.922 (2.818)</td>
+<td align="center">2015.737 (2.464)</td>
+<td align="center">2015.270 (2.584)</td>
+<td align="center">2015.295 (2.571)</td>
+<td align="center">2015.278 (2.590)</td>
+<td align="right"></td>
+</tr>
+<tr class="odd">
+<td align="left">   Range</td>
+<td align="center">2012.000 - 2019.000</td>
+<td align="center">2010.000 - 2019.000</td>
+<td align="center">2010.000 - 2019.000</td>
+<td align="center">2010.000 - 2019.000</td>
+<td align="center">2010.000 - 2019.000</td>
+<td align="center">2010.000 - 2019.000</td>
+<td align="center">2010.000 - 2019.000</td>
+<td align="right"></td>
+</tr>
+<tr class="even">
+<td align="left"><strong>age_recode_with_1_year_olds</strong></td>
+<td align="center"></td>
+<td align="center"></td>
+<td align="center"></td>
+<td align="center"></td>
+<td align="center"></td>
+<td align="center"></td>
+<td align="center"></td>
+<td align="right">&lt; 0.001<sup>2</sup></td>
+</tr>
+<tr class="odd">
+<td align="left">   20-24 years</td>
+<td align="center">0 (0.0%)</td>
+<td align="center">0 (0.0%)</td>
+<td align="center">1 (0.1%)</td>
+<td align="center">0 (0.0%)</td>
+<td align="center">0 (0.0%)</td>
+<td align="center">1 (0.0%)</td>
+<td align="center">2 (0.0%)</td>
+<td align="right"></td>
+</tr>
+<tr class="even">
+<td align="left">   25-29 years</td>
+<td align="center">0 (0.0%)</td>
+<td align="center">1 (1.9%)</td>
+<td align="center">0 (0.0%)</td>
+<td align="center">0 (0.0%)</td>
+<td align="center">0 (0.0%)</td>
+<td align="center">7 (0.1%)</td>
+<td align="center">8 (0.1%)</td>
+<td align="right"></td>
+</tr>
+<tr class="odd">
+<td align="left">   30-34 years</td>
+<td align="center">0 (0.0%)</td>
+<td align="center">0 (0.0%)</td>
+<td align="center">1 (0.1%)</td>
+<td align="center">1 (0.4%)</td>
+<td align="center">0 (0.0%)</td>
+<td align="center">24 (0.3%)</td>
+<td align="center">26 (0.3%)</td>
+<td align="right"></td>
+</tr>
+<tr class="even">
+<td align="left">   35-39 years</td>
+<td align="center">0 (0.0%)</td>
+<td align="center">0 (0.0%)</td>
+<td align="center">8 (1.2%)</td>
+<td align="center">3 (1.2%)</td>
+<td align="center">2 (0.1%)</td>
+<td align="center">43 (0.6%)</td>
+<td align="center">56 (0.6%)</td>
+<td align="right"></td>
+</tr>
+<tr class="odd">
+<td align="left">   40-44 years</td>
+<td align="center">0 (0.0%)</td>
+<td align="center">1 (1.9%)</td>
+<td align="center">13 (1.9%)</td>
+<td align="center">1 (0.4%)</td>
+<td align="center">3 (0.2%)</td>
+<td align="center">94 (1.2%)</td>
+<td align="center">112 (1.1%)</td>
+<td align="right"></td>
+</tr>
+<tr class="even">
+<td align="left">   45-49 years</td>
+<td align="center">0 (0.0%)</td>
+<td align="center">1 (1.9%)</td>
+<td align="center">22 (3.2%)</td>
+<td align="center">3 (1.2%)</td>
+<td align="center">10 (0.7%)</td>
+<td align="center">212 (2.8%)</td>
+<td align="center">248 (2.5%)</td>
+<td align="right"></td>
+</tr>
+<tr class="odd">
+<td align="left">   50-54 years</td>
+<td align="center">0 (0.0%)</td>
+<td align="center">2 (3.8%)</td>
+<td align="center">66 (9.5%)</td>
+<td align="center">17 (7.1%)</td>
+<td align="center">47 (3.3%)</td>
+<td align="center">475 (6.3%)</td>
+<td align="center">607 (6.1%)</td>
+<td align="right"></td>
+</tr>
+<tr class="even">
+<td align="left">   55-59 years</td>
+<td align="center">0 (0.0%)</td>
+<td align="center">2 (3.8%)</td>
+<td align="center">78 (11.2%)</td>
+<td align="center">22 (9.2%)</td>
+<td align="center">97 (6.8%)</td>
+<td align="center">730 (9.7%)</td>
+<td align="center">929 (9.3%)</td>
+<td align="right"></td>
+</tr>
+<tr class="odd">
+<td align="left">   60-64 years</td>
+<td align="center">1 (14.3%)</td>
+<td align="center">8 (15.4%)</td>
+<td align="center">101 (14.6%)</td>
+<td align="center">53 (22.1%)</td>
+<td align="center">146 (10.2%)</td>
+<td align="center">958 (12.7%)</td>
+<td align="center">1267 (12.7%)</td>
+<td align="right"></td>
+</tr>
+<tr class="even">
+<td align="left">   65-69 years</td>
+<td align="center">1 (14.3%)</td>
+<td align="center">9 (17.3%)</td>
+<td align="center">128 (18.4%)</td>
+<td align="center">47 (19.6%)</td>
+<td align="center">257 (17.9%)</td>
+<td align="center">1175 (15.6%)</td>
+<td align="center">1617 (16.2%)</td>
+<td align="right"></td>
+</tr>
+<tr class="odd">
+<td align="left">   70-74 years</td>
+<td align="center">4 (57.1%)</td>
+<td align="center">9 (17.3%)</td>
+<td align="center">99 (14.3%)</td>
+<td align="center">33 (13.8%)</td>
+<td align="center">263 (18.3%)</td>
+<td align="center">1206 (16.0%)</td>
+<td align="center">1614 (16.2%)</td>
+<td align="right"></td>
+</tr>
+<tr class="even">
+<td align="left">   75-79 years</td>
+<td align="center">0 (0.0%)</td>
+<td align="center">10 (19.2%)</td>
+<td align="center">79 (11.4%)</td>
+<td align="center">23 (9.6%)</td>
+<td align="center">281 (19.6%)</td>
+<td align="center">1040 (13.8%)</td>
+<td align="center">1433 (14.4%)</td>
+<td align="right"></td>
+</tr>
+<tr class="odd">
+<td align="left">   80-84 years</td>
+<td align="center">0 (0.0%)</td>
+<td align="center">3 (5.8%)</td>
+<td align="center">43 (6.2%)</td>
+<td align="center">23 (9.6%)</td>
+<td align="center">191 (13.3%)</td>
+<td align="center">817 (10.8%)</td>
+<td align="center">1077 (10.8%)</td>
+<td align="right"></td>
+</tr>
+<tr class="even">
+<td align="left">   85+ years</td>
+<td align="center">1 (14.3%)</td>
+<td align="center">6 (11.5%)</td>
+<td align="center">55 (7.9%)</td>
+<td align="center">14 (5.8%)</td>
+<td align="center">138 (9.6%)</td>
+<td align="center">765 (10.1%)</td>
+<td align="center">979 (9.8%)</td>
+<td align="right"></td>
+</tr>
+<tr class="odd">
+<td
+align="left"><strong>total_number_of_in_situ_malignant_tumors_for_patient</strong></td>
+<td align="center"></td>
+<td align="center"></td>
+<td align="center"></td>
+<td align="center"></td>
+<td align="center"></td>
+<td align="center"></td>
+<td align="center"></td>
+<td align="right">&lt; 0.001<sup>1</sup></td>
+</tr>
+<tr class="even">
+<td align="left">   Mean (SD)</td>
+<td align="center">2.429 (0.787)</td>
+<td align="center">2.019 (0.139)</td>
+<td align="center">2.174 (0.430)</td>
+<td align="center">2.071 (0.353)</td>
+<td align="center">2.126 (0.388)</td>
+<td align="center">2.151 (0.416)</td>
+<td align="center">2.147 (0.411)</td>
+<td align="right"></td>
+</tr>
+<tr class="odd">
+<td align="left">   Range</td>
+<td align="center">2.000 - 4.000</td>
+<td align="center">2.000 - 3.000</td>
+<td align="center">2.000 - 5.000</td>
+<td align="center">2.000 - 5.000</td>
+<td align="center">2.000 - 6.000</td>
+<td align="center">2.000 - 6.000</td>
+<td align="center">2.000 - 6.000</td>
+<td align="right"></td>
+</tr>
+<tr class="even">
+<td align="left"><strong>survival_months</strong></td>
+<td align="center"></td>
+<td align="center"></td>
+<td align="center"></td>
+<td align="center"></td>
+<td align="center"></td>
+<td align="center"></td>
+<td align="center"></td>
+<td align="right">&lt; 0.001<sup>1</sup></td>
+</tr>
+<tr class="odd">
+<td align="left">   N-Miss</td>
+<td align="center">0</td>
+<td align="center">0</td>
+<td align="center">7</td>
+<td align="center">1</td>
+<td align="center">10</td>
+<td align="center">22</td>
+<td align="center">40</td>
+<td align="right"></td>
+</tr>
+<tr class="even">
+<td align="left">   Mean (SD)</td>
+<td align="center">22.429 (21.809)</td>
+<td align="center">9.923 (14.417)</td>
+<td align="center">41.408 (32.003)</td>
+<td align="center">19.213 (21.077)</td>
+<td align="center">23.134 (24.620)</td>
+<td align="center">33.211 (28.386)</td>
+<td align="center">31.866 (28.372)</td>
+<td align="right"></td>
+</tr>
+<tr class="odd">
+<td align="left">   Range</td>
+<td align="center">1.000 - 52.000</td>
+<td align="center">0.000 - 75.000</td>
+<td align="center">0.000 - 117.000</td>
+<td align="center">0.000 - 112.000</td>
+<td align="center">0.000 - 117.000</td>
+<td align="center">0.000 - 119.000</td>
+<td align="center">0.000 - 119.000</td>
+<td align="right"></td>
+</tr>
+<tr class="even">
+<td
+align="left"><strong>vital_status_recode_study_cutoff_used</strong></td>
+<td align="center"></td>
+<td align="center"></td>
+<td align="center"></td>
+<td align="center"></td>
+<td align="center"></td>
+<td align="center"></td>
+<td align="center"></td>
+<td align="right">&lt; 0.001<sup>2</sup></td>
+</tr>
+<tr class="odd">
+<td align="left">   Alive</td>
+<td align="center">3 (42.9%)</td>
+<td align="center">7 (13.5%)</td>
+<td align="center">511 (73.6%)</td>
+<td align="center">89 (37.1%)</td>
+<td align="center">576 (40.1%)</td>
+<td align="center">4689 (62.1%)</td>
+<td align="center">5875 (58.9%)</td>
+<td align="right"></td>
+</tr>
+<tr class="even">
+<td align="left">   Dead</td>
+<td align="center">4 (57.1%)</td>
+<td align="center">45 (86.5%)</td>
+<td align="center">183 (26.4%)</td>
+<td align="center">151 (62.9%)</td>
+<td align="center">859 (59.9%)</td>
+<td align="center">2858 (37.9%)</td>
+<td align="center">4100 (41.1%)</td>
+<td align="right"></td>
+</tr>
+<tr class="odd">
+<td align="left"><strong>next_diagnosis</strong></td>
+<td align="center"></td>
+<td align="center"></td>
+<td align="center"></td>
+<td align="center"></td>
+<td align="center"></td>
+<td align="center"></td>
+<td align="center"></td>
+<td align="right">&lt; 0.001<sup>2</sup></td>
+</tr>
+<tr class="even">
+<td align="left">   No</td>
+<td align="center">5 (71.4%)</td>
+<td align="center">50 (96.2%)</td>
+<td align="center">617 (88.9%)</td>
+<td align="center">233 (97.1%)</td>
+<td align="center">1319 (91.9%)</td>
+<td align="center">6873 (91.1%)</td>
+<td align="center">9097 (91.2%)</td>
+<td align="right"></td>
+</tr>
+<tr class="odd">
+<td align="left">   Yes</td>
+<td align="center">2 (28.6%)</td>
+<td align="center">2 (3.8%)</td>
+<td align="center">77 (11.1%)</td>
+<td align="center">7 (2.9%)</td>
+<td align="center">116 (8.1%)</td>
+<td align="center">674 (8.9%)</td>
+<td align="center">878 (8.8%)</td>
+<td align="right"></td>
+</tr>
+<tr class="even">
+<td align="left"><strong>years_to_next_diagnosis</strong></td>
+<td align="center"></td>
+<td align="center"></td>
+<td align="center"></td>
+<td align="center"></td>
+<td align="center"></td>
+<td align="center"></td>
+<td align="center"></td>
+<td align="right">0.289<sup>1</sup></td>
+</tr>
+<tr class="odd">
+<td align="left">   N-Miss</td>
+<td align="center">5</td>
+<td align="center">50</td>
+<td align="center">617</td>
+<td align="center">233</td>
+<td align="center">1319</td>
+<td align="center">6873</td>
+<td align="center">9097</td>
+<td align="right"></td>
+</tr>
+<tr class="even">
+<td align="left">   Mean (SD)</td>
+<td align="center">0.500 (0.707)</td>
+<td align="center">2.000 (1.414)</td>
+<td align="center">1.078 (1.285)</td>
+<td align="center">1.286 (1.380)</td>
+<td align="center">1.267 (1.494)</td>
+<td align="center">1.445 (1.509)</td>
+<td align="center">1.387 (1.488)</td>
+<td align="right"></td>
+</tr>
+<tr class="odd">
+<td align="left">   Range</td>
+<td align="center">0.000 - 1.000</td>
+<td align="center">1.000 - 3.000</td>
+<td align="center">0.000 - 5.000</td>
+<td align="center">0.000 - 4.000</td>
+<td align="center">0.000 - 5.000</td>
+<td align="center">0.000 - 5.000</td>
+<td align="center">0.000 - 5.000</td>
+<td align="right"></td>
+</tr>
+<tr class="even">
+<td align="left"><strong>next_cod_to_site_recode</strong></td>
+<td align="center"></td>
+<td align="center"></td>
+<td align="center"></td>
+<td align="center"></td>
+<td align="center"></td>
+<td align="center"></td>
+<td align="center"></td>
+<td align="right">&lt; 0.001<sup>2</sup></td>
+</tr>
+<tr class="odd">
+<td align="left">   N-Miss</td>
+<td align="center">5</td>
+<td align="center">50</td>
+<td align="center">617</td>
+<td align="center">233</td>
+<td align="center">1319</td>
+<td align="center">6873</td>
+<td align="center">9097</td>
+<td align="right"></td>
+</tr>
+<tr class="even">
+<td align="left">   Accidents and Adverse Effects</td>
+<td align="center">0 (0.0%)</td>
+<td align="center">0 (0.0%)</td>
+<td align="center">0 (0.0%)</td>
+<td align="center">0 (0.0%)</td>
+<td align="center">0 (0.0%)</td>
+<td align="center">5 (0.7%)</td>
+<td align="center">5 (0.6%)</td>
+<td align="right"></td>
+</tr>
+<tr class="odd">
+<td align="left">   Acute Lymphocytic Leukemia</td>
+<td align="center">0 (0.0%)</td>
+<td align="center">0 (0.0%)</td>
+<td align="center">0 (0.0%)</td>
+<td align="center">0 (0.0%)</td>
+<td align="center">1 (0.9%)</td>
+<td align="center">0 (0.0%)</td>
+<td align="center">1 (0.1%)</td>
+<td align="right"></td>
+</tr>
+<tr class="even">
+<td align="left">   Acute Myeloid Leukemia</td>
+<td align="center">0 (0.0%)</td>
+<td align="center">0 (0.0%)</td>
+<td align="center">2 (2.6%)</td>
+<td align="center">0 (0.0%)</td>
+<td align="center">1 (0.9%)</td>
+<td align="center">12 (1.8%)</td>
+<td align="center">15 (1.7%)</td>
+<td align="right"></td>
+</tr>
+<tr class="odd">
+<td align="left">   Aleukemic, Subleukemic and NOS</td>
+<td align="center">0 (0.0%)</td>
+<td align="center">0 (0.0%)</td>
+<td align="center">0 (0.0%)</td>
+<td align="center">0 (0.0%)</td>
+<td align="center">0 (0.0%)</td>
+<td align="center">2 (0.3%)</td>
+<td align="center">2 (0.2%)</td>
+<td align="right"></td>
+</tr>
+<tr class="even">
+<td align="left">   Alive</td>
+<td align="center">2 (100.0%)</td>
+<td align="center">0 (0.0%)</td>
+<td align="center">55 (71.4%)</td>
+<td align="center">3 (42.9%)</td>
+<td align="center">60 (51.7%)</td>
+<td align="center">382 (56.7%)</td>
+<td align="center">502 (57.2%)</td>
+<td align="right"></td>
+</tr>
+<tr class="odd">
+<td align="left">   Alzheimers (ICD-9 and 10 only)</td>
+<td align="center">0 (0.0%)</td>
+<td align="center">0 (0.0%)</td>
+<td align="center">0 (0.0%)</td>
+<td align="center">0 (0.0%)</td>
+<td align="center">0 (0.0%)</td>
+<td align="center">1 (0.1%)</td>
+<td align="center">1 (0.1%)</td>
+<td align="right"></td>
+</tr>
+<tr class="even">
+<td align="left">   Anus, Anal Canal and Anorectum</td>
+<td align="center">0 (0.0%)</td>
+<td align="center">0 (0.0%)</td>
+<td align="center">0 (0.0%)</td>
+<td align="center">1 (14.3%)</td>
+<td align="center">0 (0.0%)</td>
+<td align="center">2 (0.3%)</td>
+<td align="center">3 (0.3%)</td>
+<td align="right"></td>
+</tr>
+<tr class="odd">
+<td align="left">   Brain and Other Nervous System</td>
+<td align="center">0 (0.0%)</td>
+<td align="center">2 (100.0%)</td>
+<td align="center">0 (0.0%)</td>
+<td align="center">0 (0.0%)</td>
+<td align="center">1 (0.9%)</td>
+<td align="center">1 (0.1%)</td>
+<td align="center">4 (0.5%)</td>
+<td align="right"></td>
+</tr>
+<tr class="even">
+<td align="left">   Breast</td>
+<td align="center">0 (0.0%)</td>
+<td align="center">0 (0.0%)</td>
+<td align="center">0 (0.0%)</td>
+<td align="center">0 (0.0%)</td>
+<td align="center">0 (0.0%)</td>
+<td align="center">8 (1.2%)</td>
+<td align="center">8 (0.9%)</td>
+<td align="right"></td>
+</tr>
+<tr class="odd">
+<td align="left">   Cerebrovascular Diseases</td>
+<td align="center">0 (0.0%)</td>
+<td align="center">0 (0.0%)</td>
+<td align="center">0 (0.0%)</td>
+<td align="center">0 (0.0%)</td>
+<td align="center">0 (0.0%)</td>
+<td align="center">5 (0.7%)</td>
+<td align="center">5 (0.6%)</td>
+<td align="right"></td>
+</tr>
+<tr class="even">
+<td align="left">   Chronic Liver Disease and Cirrhosis</td>
+<td align="center">0 (0.0%)</td>
+<td align="center">0 (0.0%)</td>
+<td align="center">0 (0.0%)</td>
+<td align="center">0 (0.0%)</td>
+<td align="center">0 (0.0%)</td>
+<td align="center">1 (0.1%)</td>
+<td align="center">1 (0.1%)</td>
+<td align="right"></td>
+</tr>
+<tr class="odd">
+<td align="left">   Chronic Lymphocytic Leukemia</td>
+<td align="center">0 (0.0%)</td>
+<td align="center">0 (0.0%)</td>
+<td align="center">0 (0.0%)</td>
+<td align="center">0 (0.0%)</td>
+<td align="center">0 (0.0%)</td>
+<td align="center">1 (0.1%)</td>
+<td align="center">1 (0.1%)</td>
+<td align="right"></td>
+</tr>
+<tr class="even">
+<td align="left">   Chronic Myeloid Leukemia</td>
+<td align="center">0 (0.0%)</td>
+<td align="center">0 (0.0%)</td>
+<td align="center">0 (0.0%)</td>
+<td align="center">0 (0.0%)</td>
+<td align="center">0 (0.0%)</td>
+<td align="center">3 (0.4%)</td>
+<td align="center">3 (0.3%)</td>
+<td align="right"></td>
+</tr>
+<tr class="odd">
+<td align="left">   Chronic Obstructive Pulmonary Disease and Allied
+Cond</td>
+<td align="center">0 (0.0%)</td>
+<td align="center">0 (0.0%)</td>
+<td align="center">0 (0.0%)</td>
+<td align="center">0 (0.0%)</td>
+<td align="center">1 (0.9%)</td>
+<td align="center">2 (0.3%)</td>
+<td align="center">3 (0.3%)</td>
+<td align="right"></td>
+</tr>
+<tr class="even">
+<td align="left">   Colon excluding Rectum</td>
+<td align="center">0 (0.0%)</td>
+<td align="center">0 (0.0%)</td>
+<td align="center">6 (7.8%)</td>
+<td align="center">0 (0.0%)</td>
+<td align="center">13 (11.2%)</td>
+<td align="center">55 (8.2%)</td>
+<td align="center">74 (8.4%)</td>
+<td align="right"></td>
+</tr>
+<tr class="odd">
+<td align="left">   Diabetes Mellitus</td>
+<td align="center">0 (0.0%)</td>
+<td align="center">0 (0.0%)</td>
+<td align="center">0 (0.0%)</td>
+<td align="center">0 (0.0%)</td>
+<td align="center">0 (0.0%)</td>
+<td align="center">2 (0.3%)</td>
+<td align="center">2 (0.2%)</td>
+<td align="right"></td>
+</tr>
+<tr class="even">
+<td align="left">   Diseases of Heart</td>
+<td align="center">0 (0.0%)</td>
+<td align="center">0 (0.0%)</td>
+<td align="center">1 (1.3%)</td>
+<td align="center">0 (0.0%)</td>
+<td align="center">3 (2.6%)</td>
+<td align="center">14 (2.1%)</td>
+<td align="center">18 (2.1%)</td>
+<td align="right"></td>
+</tr>
+<tr class="odd">
+<td align="left">   Esophagus</td>
+<td align="center">0 (0.0%)</td>
+<td align="center">0 (0.0%)</td>
+<td align="center">0 (0.0%)</td>
+<td align="center">0 (0.0%)</td>
+<td align="center">1 (0.9%)</td>
+<td align="center">3 (0.4%)</td>
+<td align="center">4 (0.5%)</td>
+<td align="right"></td>
+</tr>
+<tr class="even">
+<td align="left">   Gum and Other Mouth</td>
+<td align="center">0 (0.0%)</td>
+<td align="center">0 (0.0%)</td>
+<td align="center">0 (0.0%)</td>
+<td align="center">0 (0.0%)</td>
+<td align="center">0 (0.0%)</td>
+<td align="center">1 (0.1%)</td>
+<td align="center">1 (0.1%)</td>
+<td align="right"></td>
+</tr>
+<tr class="odd">
+<td align="left">   In situ, benign or unknown behavior neoplasm</td>
+<td align="center">0 (0.0%)</td>
+<td align="center">0 (0.0%)</td>
+<td align="center">0 (0.0%)</td>
+<td align="center">0 (0.0%)</td>
+<td align="center">0 (0.0%)</td>
+<td align="center">3 (0.4%)</td>
+<td align="center">3 (0.3%)</td>
+<td align="right"></td>
+</tr>
+<tr class="even">
+<td align="left">   Intrahepatic Bile Duct</td>
+<td align="center">0 (0.0%)</td>
+<td align="center">0 (0.0%)</td>
+<td align="center">0 (0.0%)</td>
+<td align="center">0 (0.0%)</td>
+<td align="center">1 (0.9%)</td>
+<td align="center">2 (0.3%)</td>
+<td align="center">3 (0.3%)</td>
+<td align="right"></td>
+</tr>
+<tr class="odd">
+<td align="left">   Kidney and Renal Pelvis</td>
+<td align="center">0 (0.0%)</td>
+<td align="center">0 (0.0%)</td>
+<td align="center">2 (2.6%)</td>
+<td align="center">0 (0.0%)</td>
+<td align="center">0 (0.0%)</td>
+<td align="center">2 (0.3%)</td>
+<td align="center">4 (0.5%)</td>
+<td align="right"></td>
+</tr>
+<tr class="even">
+<td align="left">   Larynx</td>
+<td align="center">0 (0.0%)</td>
+<td align="center">0 (0.0%)</td>
+<td align="center">0 (0.0%)</td>
+<td align="center">1 (14.3%)</td>
+<td align="center">0 (0.0%)</td>
+<td align="center">3 (0.4%)</td>
+<td align="center">4 (0.5%)</td>
+<td align="right"></td>
+</tr>
+<tr class="odd">
+<td align="left">   Liver</td>
+<td align="center">0 (0.0%)</td>
+<td align="center">0 (0.0%)</td>
+<td align="center">0 (0.0%)</td>
+<td align="center">0 (0.0%)</td>
+<td align="center">0 (0.0%)</td>
+<td align="center">3 (0.4%)</td>
+<td align="center">3 (0.3%)</td>
+<td align="right"></td>
+</tr>
+<tr class="even">
+<td align="left">   Lung and Bronchus</td>
+<td align="center">0 (0.0%)</td>
+<td align="center">0 (0.0%)</td>
+<td align="center">4 (5.2%)</td>
+<td align="center">0 (0.0%)</td>
+<td align="center">22 (19.0%)</td>
+<td align="center">26 (3.9%)</td>
+<td align="center">52 (5.9%)</td>
+<td align="right"></td>
+</tr>
+<tr class="odd">
+<td align="left">   Melanoma of the Skin</td>
+<td align="center">0 (0.0%)</td>
+<td align="center">0 (0.0%)</td>
+<td align="center">0 (0.0%)</td>
+<td align="center">0 (0.0%)</td>
+<td align="center">0 (0.0%)</td>
+<td align="center">3 (0.4%)</td>
+<td align="center">3 (0.3%)</td>
+<td align="right"></td>
+</tr>
+<tr class="even">
+<td align="left">   Miscellaneous Malignant Cancer</td>
+<td align="center">0 (0.0%)</td>
+<td align="center">0 (0.0%)</td>
+<td align="center">2 (2.6%)</td>
+<td align="center">0 (0.0%)</td>
+<td align="center">4 (3.4%)</td>
+<td align="center">26 (3.9%)</td>
+<td align="center">32 (3.6%)</td>
+<td align="right"></td>
+</tr>
+<tr class="odd">
+<td align="left">   Myeloma</td>
+<td align="center">0 (0.0%)</td>
+<td align="center">0 (0.0%)</td>
+<td align="center">0 (0.0%)</td>
+<td align="center">0 (0.0%)</td>
+<td align="center">0 (0.0%)</td>
+<td align="center">5 (0.7%)</td>
+<td align="center">5 (0.6%)</td>
+<td align="right"></td>
+</tr>
+<tr class="even">
+<td align="left">   Nephritis, Nephrotic Syndrome and Nephrosis</td>
+<td align="center">0 (0.0%)</td>
+<td align="center">0 (0.0%)</td>
+<td align="center">0 (0.0%)</td>
+<td align="center">0 (0.0%)</td>
+<td align="center">0 (0.0%)</td>
+<td align="center">2 (0.3%)</td>
+<td align="center">2 (0.2%)</td>
+<td align="right"></td>
+</tr>
+<tr class="odd">
+<td align="left">   Non-Hodgkin Lymphoma</td>
+<td align="center">0 (0.0%)</td>
+<td align="center">0 (0.0%)</td>
+<td align="center">0 (0.0%)</td>
+<td align="center">0 (0.0%)</td>
+<td align="center">0 (0.0%)</td>
+<td align="center">2 (0.3%)</td>
+<td align="center">2 (0.2%)</td>
+<td align="right"></td>
+</tr>
+<tr class="even">
+<td align="left">   Non-Melanoma Skin</td>
+<td align="center">0 (0.0%)</td>
+<td align="center">0 (0.0%)</td>
+<td align="center">0 (0.0%)</td>
+<td align="center">0 (0.0%)</td>
+<td align="center">0 (0.0%)</td>
+<td align="center">3 (0.4%)</td>
+<td align="center">3 (0.3%)</td>
+<td align="right"></td>
+</tr>
+<tr class="odd">
+<td align="left">   Oropharynx</td>
+<td align="center">0 (0.0%)</td>
+<td align="center">0 (0.0%)</td>
+<td align="center">0 (0.0%)</td>
+<td align="center">0 (0.0%)</td>
+<td align="center">0 (0.0%)</td>
+<td align="center">1 (0.1%)</td>
+<td align="center">1 (0.1%)</td>
+<td align="right"></td>
+</tr>
+<tr class="even">
+<td align="left">   Other Acute Leukemia</td>
+<td align="center">0 (0.0%)</td>
+<td align="center">0 (0.0%)</td>
+<td align="center">0 (0.0%)</td>
+<td align="center">0 (0.0%)</td>
+<td align="center">0 (0.0%)</td>
+<td align="center">2 (0.3%)</td>
+<td align="center">2 (0.2%)</td>
+<td align="right"></td>
+</tr>
+<tr class="odd">
+<td align="left">   Other Cause of Death</td>
+<td align="center">0 (0.0%)</td>
+<td align="center">0 (0.0%)</td>
+<td align="center">0 (0.0%)</td>
+<td align="center">0 (0.0%)</td>
+<td align="center">1 (0.9%)</td>
+<td align="center">10 (1.5%)</td>
+<td align="center">11 (1.3%)</td>
+<td align="right"></td>
+</tr>
+<tr class="even">
+<td align="left">   Other Digestive Organs</td>
+<td align="center">0 (0.0%)</td>
+<td align="center">0 (0.0%)</td>
+<td align="center">0 (0.0%)</td>
+<td align="center">0 (0.0%)</td>
+<td align="center">0 (0.0%)</td>
+<td align="center">5 (0.7%)</td>
+<td align="center">5 (0.6%)</td>
+<td align="right"></td>
+</tr>
+<tr class="odd">
+<td align="left">   Other Infectious and Parasitic Diseases including
+HIV</td>
+<td align="center">0 (0.0%)</td>
+<td align="center">0 (0.0%)</td>
+<td align="center">0 (0.0%)</td>
+<td align="center">0 (0.0%)</td>
+<td align="center">1 (0.9%)</td>
+<td align="center">0 (0.0%)</td>
+<td align="center">1 (0.1%)</td>
+<td align="right"></td>
+</tr>
+<tr class="even">
+<td align="left">   Ovary</td>
+<td align="center">0 (0.0%)</td>
+<td align="center">0 (0.0%)</td>
+<td align="center">0 (0.0%)</td>
+<td align="center">0 (0.0%)</td>
+<td align="center">0 (0.0%)</td>
+<td align="center">4 (0.6%)</td>
+<td align="center">4 (0.5%)</td>
+<td align="right"></td>
+</tr>
+<tr class="odd">
+<td align="left">   Pancreas</td>
+<td align="center">0 (0.0%)</td>
+<td align="center">0 (0.0%)</td>
+<td align="center">0 (0.0%)</td>
+<td align="center">0 (0.0%)</td>
+<td align="center">2 (1.7%)</td>
+<td align="center">14 (2.1%)</td>
+<td align="center">16 (1.8%)</td>
+<td align="right"></td>
+</tr>
+<tr class="even">
+<td align="left">   Penis</td>
+<td align="center">0 (0.0%)</td>
+<td align="center">0 (0.0%)</td>
+<td align="center">0 (0.0%)</td>
+<td align="center">0 (0.0%)</td>
+<td align="center">0 (0.0%)</td>
+<td align="center">1 (0.1%)</td>
+<td align="center">1 (0.1%)</td>
+<td align="right"></td>
+</tr>
+<tr class="odd">
+<td align="left">   Pneumonia and Influenza</td>
+<td align="center">0 (0.0%)</td>
+<td align="center">0 (0.0%)</td>
+<td align="center">0 (0.0%)</td>
+<td align="center">0 (0.0%)</td>
+<td align="center">0 (0.0%)</td>
+<td align="center">3 (0.4%)</td>
+<td align="center">3 (0.3%)</td>
+<td align="right"></td>
+</tr>
+<tr class="even">
+<td align="left">   Prostate</td>
+<td align="center">0 (0.0%)</td>
+<td align="center">0 (0.0%)</td>
+<td align="center">2 (2.6%)</td>
+<td align="center">0 (0.0%)</td>
+<td align="center">0 (0.0%)</td>
+<td align="center">5 (0.7%)</td>
+<td align="center">7 (0.8%)</td>
+<td align="right"></td>
+</tr>
+<tr class="odd">
+<td align="left">   Rectum and Rectosigmoid Junction</td>
+<td align="center">0 (0.0%)</td>
+<td align="center">0 (0.0%)</td>
+<td align="center">1 (1.3%)</td>
+<td align="center">1 (14.3%)</td>
+<td align="center">3 (2.6%)</td>
+<td align="center">11 (1.6%)</td>
+<td align="center">16 (1.8%)</td>
+<td align="right"></td>
+</tr>
+<tr class="even">
+<td align="left">   Septicemia</td>
+<td align="center">0 (0.0%)</td>
+<td align="center">0 (0.0%)</td>
+<td align="center">0 (0.0%)</td>
+<td align="center">0 (0.0%)</td>
+<td align="center">0 (0.0%)</td>
+<td align="center">3 (0.4%)</td>
+<td align="center">3 (0.3%)</td>
+<td align="right"></td>
+</tr>
+<tr class="odd">
+<td align="left">   Soft Tissue including Heart</td>
+<td align="center">0 (0.0%)</td>
+<td align="center">0 (0.0%)</td>
+<td align="center">0 (0.0%)</td>
+<td align="center">0 (0.0%)</td>
+<td align="center">0 (0.0%)</td>
+<td align="center">1 (0.1%)</td>
+<td align="center">1 (0.1%)</td>
+<td align="right"></td>
+</tr>
+<tr class="even">
+<td align="left">   State DC not available or state DC available but no
+COD</td>
+<td align="center">0 (0.0%)</td>
+<td align="center">0 (0.0%)</td>
+<td align="center">0 (0.0%)</td>
+<td align="center">0 (0.0%)</td>
+<td align="center">0 (0.0%)</td>
+<td align="center">7 (1.0%)</td>
+<td align="center">7 (0.8%)</td>
+<td align="right"></td>
+</tr>
+<tr class="odd">
+<td align="left">   Stomach</td>
+<td align="center">0 (0.0%)</td>
+<td align="center">0 (0.0%)</td>
+<td align="center">1 (1.3%)</td>
+<td align="center">0 (0.0%)</td>
+<td align="center">0 (0.0%)</td>
+<td align="center">4 (0.6%)</td>
+<td align="center">5 (0.6%)</td>
+<td align="right"></td>
+</tr>
+<tr class="even">
+<td align="left">   Symptoms, Signs and Ill-Defined Conditions</td>
+<td align="center">0 (0.0%)</td>
+<td align="center">0 (0.0%)</td>
+<td align="center">0 (0.0%)</td>
+<td align="center">0 (0.0%)</td>
+<td align="center">0 (0.0%)</td>
+<td align="center">1 (0.1%)</td>
+<td align="center">1 (0.1%)</td>
+<td align="right"></td>
+</tr>
+<tr class="odd">
+<td align="left">   Tongue</td>
+<td align="center">0 (0.0%)</td>
+<td align="center">0 (0.0%)</td>
+<td align="center">0 (0.0%)</td>
+<td align="center">0 (0.0%)</td>
+<td align="center">0 (0.0%)</td>
+<td align="center">2 (0.3%)</td>
+<td align="center">2 (0.2%)</td>
+<td align="right"></td>
+</tr>
+<tr class="even">
+<td align="left">   Ureter</td>
+<td align="center">0 (0.0%)</td>
+<td align="center">0 (0.0%)</td>
+<td align="center">0 (0.0%)</td>
+<td align="center">0 (0.0%)</td>
+<td align="center">0 (0.0%)</td>
+<td align="center">1 (0.1%)</td>
+<td align="center">1 (0.1%)</td>
+<td align="right"></td>
+</tr>
+<tr class="odd">
+<td align="left">   Urinary Bladder</td>
+<td align="center">0 (0.0%)</td>
+<td align="center">0 (0.0%)</td>
+<td align="center">0 (0.0%)</td>
+<td align="center">1 (14.3%)</td>
+<td align="center">0 (0.0%)</td>
+<td align="center">15 (2.2%)</td>
+<td align="center">16 (1.8%)</td>
+<td align="right"></td>
+</tr>
+<tr class="even">
+<td align="left">   Uterus, NOS</td>
+<td align="center">0 (0.0%)</td>
+<td align="center">0 (0.0%)</td>
+<td align="center">1 (1.3%)</td>
+<td align="center">0 (0.0%)</td>
+<td align="center">1 (0.9%)</td>
+<td align="center">3 (0.4%)</td>
+<td align="center">5 (0.6%)</td>
+<td align="right"></td>
+</tr>
+<tr class="odd">
+<td align="left">   Vulva</td>
+<td align="center">0 (0.0%)</td>
+<td align="center">0 (0.0%)</td>
+<td align="center">0 (0.0%)</td>
+<td align="center">0 (0.0%)</td>
+<td align="center">0 (0.0%)</td>
+<td align="center">1 (0.1%)</td>
+<td align="center">1 (0.1%)</td>
+<td align="right"></td>
+</tr>
+</tbody>
+</table>
+<ol style="list-style-type: decimal">
+<li>Linear Model ANOVA</li>
+<li>Pearson’s Chi-squared test</li>
+</ol>
+<pre class="r"><code>tab_labels &lt;- c(
+  &quot;next_diagnosis&quot;, &quot;next_event&quot;, &quot;years_to_next_diagnosis&quot;, &#39;survival_months&#39;)
+use_formula &lt;- as.formula(paste0(&#39;site ~&#39;, paste(tab_labels, collapse = &#39;+&#39;)))
+res_tab &lt;- tableby(use_formula, data=data_m0_first_mets) 
+summary(res_tab, pfootnote = TRUE)</code></pre>
+<table>
+<colgroup>
+<col width="20%" />
+<col width="10%" />
+<col width="9%" />
+<col width="10%" />
+<col width="10%" />
+<col width="10%" />
+<col width="10%" />
+<col width="10%" />
+<col width="6%" />
+</colgroup>
+<thead>
+<tr class="header">
+<th align="left"></th>
+<th align="center">Bone (N=7)</th>
+<th align="center">Brain (N=52)</th>
+<th align="center">Kidney (N=694)</th>
+<th align="center">Liver (N=240)</th>
+<th align="center">Lung (N=1435)</th>
+<th align="center">Other (N=7547)</th>
+<th align="center">Total (N=9975)</th>
+<th align="right">p value</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td align="left"><strong>next_diagnosis</strong></td>
+<td align="center"></td>
+<td align="center"></td>
+<td align="center"></td>
+<td align="center"></td>
+<td align="center"></td>
+<td align="center"></td>
+<td align="center"></td>
+<td align="right">&lt; 0.001<sup>1</sup></td>
+</tr>
+<tr class="even">
+<td align="left">   No</td>
+<td align="center">5 (71.4%)</td>
+<td align="center">50 (96.2%)</td>
+<td align="center">617 (88.9%)</td>
+<td align="center">233 (97.1%)</td>
+<td align="center">1319 (91.9%)</td>
+<td align="center">6873 (91.1%)</td>
+<td align="center">9097 (91.2%)</td>
+<td align="right"></td>
+</tr>
+<tr class="odd">
+<td align="left">   Yes</td>
+<td align="center">2 (28.6%)</td>
+<td align="center">2 (3.8%)</td>
+<td align="center">77 (11.1%)</td>
+<td align="center">7 (2.9%)</td>
+<td align="center">116 (8.1%)</td>
+<td align="center">674 (8.9%)</td>
+<td align="center">878 (8.8%)</td>
+<td align="right"></td>
+</tr>
+<tr class="even">
+<td align="left"><strong>next_event</strong></td>
+<td align="center"></td>
+<td align="center"></td>
+<td align="center"></td>
+<td align="center"></td>
+<td align="center"></td>
+<td align="center"></td>
+<td align="center"></td>
+<td align="right">&lt; 0.001<sup>1</sup></td>
+</tr>
+<tr class="odd">
+<td align="left">   Death</td>
+<td align="center">4 (57.1%)</td>
+<td align="center">43 (82.7%)</td>
+<td align="center">161 (23.2%)</td>
+<td align="center">147 (61.2%)</td>
+<td align="center">803 (56.0%)</td>
+<td align="center">2566 (34.0%)</td>
+<td align="center">3724 (37.3%)</td>
+<td align="right"></td>
+</tr>
+<tr class="even">
+<td align="left">   New malignancy</td>
+<td align="center">2 (28.6%)</td>
+<td align="center">2 (3.8%)</td>
+<td align="center">77 (11.1%)</td>
+<td align="center">7 (2.9%)</td>
+<td align="center">116 (8.1%)</td>
+<td align="center">674 (8.9%)</td>
+<td align="center">878 (8.8%)</td>
+<td align="right"></td>
+</tr>
+<tr class="odd">
+<td align="left">   None</td>
+<td align="center">1 (14.3%)</td>
+<td align="center">7 (13.5%)</td>
+<td align="center">456 (65.7%)</td>
+<td align="center">86 (35.8%)</td>
+<td align="center">516 (36.0%)</td>
+<td align="center">4307 (57.1%)</td>
+<td align="center">5373 (53.9%)</td>
+<td align="right"></td>
+</tr>
+<tr class="even">
+<td align="left"><strong>years_to_next_diagnosis</strong></td>
+<td align="center"></td>
+<td align="center"></td>
+<td align="center"></td>
+<td align="center"></td>
+<td align="center"></td>
+<td align="center"></td>
+<td align="center"></td>
+<td align="right">0.289<sup>2</sup></td>
+</tr>
+<tr class="odd">
+<td align="left">   N-Miss</td>
+<td align="center">5</td>
+<td align="center">50</td>
+<td align="center">617</td>
+<td align="center">233</td>
+<td align="center">1319</td>
+<td align="center">6873</td>
+<td align="center">9097</td>
+<td align="right"></td>
+</tr>
+<tr class="even">
+<td align="left">   Mean (SD)</td>
+<td align="center">0.500 (0.707)</td>
+<td align="center">2.000 (1.414)</td>
+<td align="center">1.078 (1.285)</td>
+<td align="center">1.286 (1.380)</td>
+<td align="center">1.267 (1.494)</td>
+<td align="center">1.445 (1.509)</td>
+<td align="center">1.387 (1.488)</td>
+<td align="right"></td>
+</tr>
+<tr class="odd">
+<td align="left">   Range</td>
+<td align="center">0.000 - 1.000</td>
+<td align="center">1.000 - 3.000</td>
+<td align="center">0.000 - 5.000</td>
+<td align="center">0.000 - 4.000</td>
+<td align="center">0.000 - 5.000</td>
+<td align="center">0.000 - 5.000</td>
+<td align="center">0.000 - 5.000</td>
+<td align="right"></td>
+</tr>
+<tr class="even">
+<td align="left"><strong>survival_months</strong></td>
+<td align="center"></td>
+<td align="center"></td>
+<td align="center"></td>
+<td align="center"></td>
+<td align="center"></td>
+<td align="center"></td>
+<td align="center"></td>
+<td align="right">&lt; 0.001<sup>2</sup></td>
+</tr>
+<tr class="odd">
+<td align="left">   N-Miss</td>
+<td align="center">0</td>
+<td align="center">0</td>
+<td align="center">7</td>
+<td align="center">1</td>
+<td align="center">10</td>
+<td align="center">22</td>
+<td align="center">40</td>
+<td align="right"></td>
+</tr>
+<tr class="even">
+<td align="left">   Mean (SD)</td>
+<td align="center">22.429 (21.809)</td>
+<td align="center">9.923 (14.417)</td>
+<td align="center">41.408 (32.003)</td>
+<td align="center">19.213 (21.077)</td>
+<td align="center">23.134 (24.620)</td>
+<td align="center">33.211 (28.386)</td>
+<td align="center">31.866 (28.372)</td>
+<td align="right"></td>
+</tr>
+<tr class="odd">
+<td align="left">   Range</td>
+<td align="center">1.000 - 52.000</td>
+<td align="center">0.000 - 75.000</td>
+<td align="center">0.000 - 117.000</td>
+<td align="center">0.000 - 112.000</td>
+<td align="center">0.000 - 117.000</td>
+<td align="center">0.000 - 119.000</td>
+<td align="center">0.000 - 119.000</td>
+<td align="right"></td>
+</tr>
+</tbody>
+</table>
+<ol style="list-style-type: decimal">
+<li>Pearson’s Chi-squared test</li>
+<li>Linear Model ANOVA</li>
+</ol>
+</div>
+</div>
+<div id="met-sites-liver-lung" class="section level2" number="4">
+<h2><span class="header-section-number">4</span> Met sites :
+Liver-Lung</h2>
+<div id="new-metastasis-free-survival-3-year-months-censoring"
+class="section level3" number="4.1">
+<h3><span class="header-section-number">4.1</span> New metastasis-Free
+Survival (3 year months censoring)</h3>
+<p>Using the patients with metastatic cancer at diagnosis, we analyze
+the length of time from diagnosis that a patient is still alive and the
+cancer has not spread to other parts of the body. We censored patients
+with incomplete follow-up, death attributable to other cases or death
+with unknown/missing cause.</p>
+<pre class="r"><code>n_months &lt;- 3*12
+use_subset &lt;- data_met_dx %&gt;% 
+  filter(seer_combined_mets_at_dx %in% c(&#39;Liver&#39;, &#39;Lung&#39;) )
+use_data &lt;- use_subset %&gt;%
+  mutate(
+    mfs_months = 12*use_subset$years_to_next_diagnosis,
+    mfs_months = ifelse(is.na(mfs_months), survival_months, mfs_months),
+    status = ifelse(!is.na(mfs_months), 1, 0),
+    status = ifelse(status == 0 &amp; seer_cause_specific_death_classification == &#39;Dead (attributable to this cancer dx)&#39;, 1, status),
+    status = ifelse(mfs_months &gt; n_months, 0, status),
+    mfs_months =  ifelse(mfs_months &gt; n_months, n_months, mfs_months)
+  ) %&gt;% 
+  filter(
+    survival_months_flag == &#39;Complete dates are available and there are more than 0 days of survival&#39;
+  )
+
+km_fit &lt;- survfit2(Surv(mfs_months, status) ~ seer_combined_mets_at_dx, data=use_data)
+
+sdiff_res &lt;- survdiff(Surv(mfs_months, status) ~ seer_combined_mets_at_dx, data=use_data)
+coxph_res &lt;- coxph(Surv(mfs_months, status) ~ seer_combined_mets_at_dx, data=use_data)</code></pre>
+<div id="km-plot" class="section level4" number="4.1.1">
+<h4><span class="header-section-number">4.1.1</span> KM plot</h4>
+<pre class="r"><code>ggsurvfit(km_fit) +
+  scale_x_continuous(
+    limits = c(0, n_months),
+    expand = c(0, 0)
+  ) +
+  scale_color_manual(values = site_palette) +
+  theme_project +
+  labs(
+    x = &quot;Months&quot;,
+    y = &quot;Next metastasis-free survival&quot;,
+    caption = paste0(&quot;Log-rank P value = &quot;, format.pval(sdiff_res$pvalue,2))
+  )</code></pre>
+<p><img src="figure/seer_colorectal_analysis.Rmd/mfs-ll-km-3y-1.png" width="2100" style="display: block; margin: auto;" /></p>
+</div>
+<div id="log-rank-test" class="section level4" number="4.1.2">
+<h4><span class="header-section-number">4.1.2</span> Log-rank test</h4>
+<pre class="r"><code>broom::tidy(sdiff_res) %&gt;% 
+  mutate(`(O-E)^2/E` = ((obs-exp)^2)/exp) %&gt;% 
+  kable(caption = &quot;Test Survival Curve Differences.&quot;) %&gt;% 
+  kable_styling(bootstrap_options = c(&quot;striped&quot;, &quot;hover&quot;), full_width = F)</code></pre>
+<table class="table table-striped table-hover" style="width: auto !important; margin-left: auto; margin-right: auto;">
+<caption>
+Test Survival Curve Differences.
+</caption>
+<thead>
+<tr>
+<th style="text-align:left;">
+seer_combined_mets_at_dx
+</th>
+<th style="text-align:right;">
+N
+</th>
+<th style="text-align:right;">
+obs
+</th>
+<th style="text-align:right;">
+exp
+</th>
+<th style="text-align:right;">
+(O-E)^2/E
+</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td style="text-align:left;">
+Liver
+</td>
+<td style="text-align:right;">
+13355
+</td>
+<td style="text-align:right;">
+11499
+</td>
+<td style="text-align:right;">
+11281.863
+</td>
+<td style="text-align:right;">
+4.179144
+</td>
+</tr>
+<tr>
+<td style="text-align:left;">
+Lung
+</td>
+<td style="text-align:right;">
+1864
+</td>
+<td style="text-align:right;">
+1531
+</td>
+<td style="text-align:right;">
+1748.137
+</td>
+<td style="text-align:right;">
+26.970726
+</td>
+</tr>
+</tbody>
+</table>
+</div>
+<div id="cox-regression-model" class="section level4" number="4.1.3">
+<h4><span class="header-section-number">4.1.3</span> Cox regression
+model</h4>
+<pre class="r"><code># coxph_res %&gt;% 
+#   gtsummary::tbl_regression(exp = TRUE) %&gt;% 
+#   gtsummary::as_gt()  %&gt;%
+#   gt::tab_source_note(gt::md(&quot;*Cox regression model*&quot;))
+
+coxph_res %&gt;% broom::tidy() %&gt;% 
+  mutate(
+    ci.l = estimate - 1.96*std.error,
+    ci.u = estimate + 1.96*std.error 
+  ) %&gt;% 
+  dplyr::rename(HR = estimate) %&gt;% 
+  mutate(
+    HR = exp(HR),
+    ci.u = exp(ci.u),
+    ci.l = exp(ci.l),
+    term = gsub(&#39;seer_combined_mets_at_dx&#39;, &#39;&#39;, term),
+    p.value = format.pval(p.value)) %&gt;% 
+  kable(caption = &quot;Cox PH model&quot;) %&gt;% 
+  kable_styling(bootstrap_options = c(&quot;striped&quot;, &quot;hover&quot;), full_width = F)</code></pre>
+<table class="table table-striped table-hover" style="width: auto !important; margin-left: auto; margin-right: auto;">
+<caption>
+Cox PH model
+</caption>
+<thead>
+<tr>
+<th style="text-align:left;">
+term
+</th>
+<th style="text-align:right;">
+HR
+</th>
+<th style="text-align:right;">
+std.error
+</th>
+<th style="text-align:right;">
+statistic
+</th>
+<th style="text-align:left;">
+p.value
+</th>
+<th style="text-align:right;">
+ci.l
+</th>
+<th style="text-align:right;">
+ci.u
+</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td style="text-align:left;">
+Lung
+</td>
+<td style="text-align:right;">
+0.8539487
+</td>
+<td style="text-align:right;">
+0.02721
+</td>
+<td style="text-align:right;">
+-5.802425
+</td>
+<td style="text-align:left;">
+6.5363e-09
+</td>
+<td style="text-align:right;">
+0.8095993
+</td>
+<td style="text-align:right;">
+0.9007275
+</td>
+</tr>
+</tbody>
+</table>
+</div>
+<div id="distribution" class="section level4" number="4.1.4">
+<h4><span class="header-section-number">4.1.4</span> Distribution</h4>
+<div id="raincloud-plot" class="section level5" number="4.1.4.1">
+<h5><span class="header-section-number">4.1.4.1</span> Raincloud
+plot</h5>
+<pre class="r"><code>use_data %&gt;% 
+  ggplot(aes(seer_combined_mets_at_dx, mfs_months, 
+             fill = seer_combined_mets_at_dx,
+             color = seer_combined_mets_at_dx)) +
+  ggdist::stat_halfeye(
+    adjust = .5, 
+    width = .6, 
+    .width = 0, 
+    justification = -.3, 
+    point_colour = NA) + 
+  geom_boxplot(
+    width = .20, 
+    outlier.shape = NA,
+    alpha = 0.3, 
+    color = &#39;white&#39;
+  ) +
+  # geom_boxplot(alpha = 0.4, 
+  #              color = &#39;black&#39;, 
+  #              outlier.shape = NA,
+  #              show.legend = FALSE, 
+  #              size = 0.25, 
+  #              fatten = 1,
+  #              width = .20) +
+ # ## add justified jitter from the {gghalves} package
+ #  gghalves::geom_half_point(
+ #    ## draw jitter on the left
+ #    side = &quot;l&quot;, 
+ #    ## control range of jitter
+ #    range_scale = .4, 
+ #    ## add some transparency
+ #    alpha = .2, 
+ #    size = 0.7
+ #  ) + 
+  geom_point(
+    size = 0.5, pch = 16,
+    alpha = .5,
+    position = position_jitter(
+      seed = 1, width = .1
+    )
+  ) + 
+  geom_boxplot(
+    width = .20, 
+    outlier.shape = NA,
+    alpha = 0, 
+    color = &#39;black&#39;
+  ) +
+  scale_fill_manual(values = site_palette) + 
+  scale_color_manual(values = site_palette) +
+  guides(color = &#39;none&#39;, fill = &#39;none&#39;) +
+  stat_compare_means(method = &quot;wilcox.test&quot;, 
+                     label.y = n_months+0.05*n_months, 
+                     size = geom_text_size)+ 
+  labs(
+    x = &#39;&#39;,
+    y = &#39;Time (months)&#39;
+  )</code></pre>
+<p><img src="figure/seer_colorectal_analysis.Rmd/mfs-ll-dist-raincloud-3y-1.png" width="2100" style="display: block; margin: auto;" /></p>
+</div>
+</div>
+<div id="survival-rate-at-endpoint" class="section level4"
+number="4.1.5">
+<h4><span class="header-section-number">4.1.5</span> Survival rate at
+endpoint</h4>
+<pre class="r"><code>plot_data &lt;- use_data %&gt;% 
+  group_by(seer_combined_mets_at_dx) %&gt;% 
+  summarise(
+    n = n(),
+    n_surv = sum(mfs_months == n_months)
+  ) %&gt;% 
+  mutate(
+    p_surv = n_surv/n,
+    n_events = n - n_surv)
+
+ft_res &lt;- fisher.test(plot_data %&gt;% column_to_rownames(&#39;seer_combined_mets_at_dx&#39;) %&gt;% dplyr::select(n_events, n_surv), alternative = &quot;greater&quot;) %&gt;% 
+  broom::tidy() %&gt;% 
+  mutate(
+    group1 = &#39;Liver&#39;,
+    group2 = &#39;Lung&#39;,
+    .y. = &#39;p_surv&#39;,
+    y.position = max(plot_data$p_surv)+0.10*max(plot_data$p_surv),
+    p.value = format.pval(p.value, 2),
+    or_ci = paste0(round(estimate, 2), &#39; (&#39;, round(conf.low,2),&#39;-&#39;, round(conf.high,2),&#39;)&#39;)
+  )
+
+plot_data %&gt;% 
+  ggplot(aes(seer_combined_mets_at_dx, p_surv)) +
+  geom_col(aes(fill = seer_combined_mets_at_dx), width = 0.5) +
+  scale_fill_manual(values = site_palette) +
+  scale_y_continuous(
+    labels = scales::percent,
+    expand = expansion(mult = c(0, 0.1))
+    ) +
+  guides(color = &#39;none&#39;, fill = &#39;none&#39;) +
+  stat_pvalue_manual(ft_res, label = &quot;P = {p.value}&quot;, 
+                     label.size = geom_text_size) +
+  labs(
+    x = &#39;&#39;,
+    y = &#39;Percentage of patients&#39;,
+    caption = paste(
+      &#39;Odds ratio (95%CI) = &#39;, ft_res$or_ci, &#39;\n&#39;,
+      &#39;P = one-sided Fisher test P value&#39;
+      )
+  )</code></pre>
+<p><img src="figure/seer_colorectal_analysis.Rmd/mfs-ll-dist-survival_rate_at_3y-1.png" width="1500" style="display: block; margin: auto;" /></p>
+<br>
+<p>
+<button type="button" class="btn btn-default btn-workflowr btn-workflowr-sessioninfo" data-toggle="collapse" data-target="#workflowr-sessioninfo" style="display: block;">
+<span class="glyphicon glyphicon-wrench" aria-hidden="true"></span>
+Session information
+</button>
+</p>
+<div id="workflowr-sessioninfo" class="collapse">
+<pre class="r"><code>sessionInfo()</code></pre>
+<p>R version 4.2.2 (2022-10-31) Platform: x86_64-apple-darwin17.0
+(64-bit) Running under: macOS Big Sur … 10.16</p>
+<p>Matrix products: default BLAS:
+/Library/Frameworks/R.framework/Versions/4.2/Resources/lib/libRblas.0.dylib
+LAPACK:
+/Library/Frameworks/R.framework/Versions/4.2/Resources/lib/libRlapack.dylib</p>
+<p>locale: [1]
+en_US.UTF-8/en_US.UTF-8/en_US.UTF-8/C/en_US.UTF-8/en_US.UTF-8</p>
+<p>attached base packages: [1] stats graphics grDevices utils datasets
+methods base</p>
+<p>other attached packages: [1] cowplot_1.1.1 ggpubr_0.6.0
+ggbeeswarm_0.7.2 ggsurvfit_0.3.1<br />
+[5] survival_3.5-7 colorblindr_0.1.0 colorspace_2.1-1
+janitor_2.2.0<br />
+[9] arsenal_3.6.3 kableExtra_1.3.4 knitr_1.44 foreach_1.5.2<br />
+[13] showtext_0.9-6 showtextdb_3.0 sysfonts_0.8.8 lubridate_1.9.3<br />
+[17] forcats_1.0.0 stringr_1.5.1 dplyr_1.1.4 purrr_1.0.2<br />
+[21] readr_2.1.4 tidyr_1.3.1 tibble_3.2.1 ggplot2_3.5.0<br />
+[25] tidyverse_2.0.0 workflowr_1.7.1</p>
+<p>loaded via a namespace (and not attached): [1] fs_1.6.4 bit64_4.0.5
+webshot_0.5.5<br />
+[4] httr_1.4.7 rprojroot_2.0.3 tools_4.2.2<br />
+[7] backports_1.4.1 bslib_0.5.1 utf8_1.2.4<br />
+[10] R6_2.5.1 vipor_0.4.5 ggdist_3.3.0<br />
+[13] withr_3.0.1 tidyselect_1.2.1 processx_3.8.2<br />
+[16] bit_4.0.5 compiler_4.2.2 git2r_0.32.0<br />
+[19] cli_3.6.3 rvest_1.0.3 xml2_1.3.5<br />
+[22] labeling_0.4.3 sass_0.4.7 scales_1.3.0<br />
+[25] callr_3.7.3 systemfonts_1.1.0 digest_0.6.37<br />
+[28] rmarkdown_2.25 svglite_2.1.2 pkgconfig_2.0.3<br />
+[31] htmltools_0.5.6.1 highr_0.10 fastmap_1.1.1<br />
+[34] rlang_1.1.4 rstudioapi_0.15.0 jquerylib_0.1.4<br />
+[37] generics_0.1.3 farver_2.1.2 jsonlite_1.8.7<br />
+[40] vroom_1.6.4 distributional_0.3.2 car_3.1-2<br />
+[43] magrittr_2.0.3 Matrix_1.5-3 Rcpp_1.0.13<br />
+[46] munsell_0.5.1 fansi_1.0.6 abind_1.4-5<br />
+[49] lifecycle_1.0.4 stringi_1.8.4 whisker_0.4.1<br />
+[52] yaml_2.3.7 snakecase_0.11.1 carData_3.0-5<br />
+[55] grid_4.2.2 parallel_4.2.2 promises_1.2.1<br />
+[58] crayon_1.5.2 lattice_0.20-45 splines_4.2.2<br />
+[61] hms_1.1.3 ps_1.7.5 pillar_1.9.0<br />
+[64] ggsignif_0.6.4 codetools_0.2-19 glue_1.8.0<br />
+[67] evaluate_0.22 getPass_0.2-2 vctrs_0.6.5<br />
+[70] tzdb_0.4.0 httpuv_1.6.8 gtable_0.3.5<br />
+[73] cachem_1.0.8 xfun_0.40 broom_1.0.5<br />
+[76] rstatix_0.7.2 later_1.3.1 viridisLite_0.4.2<br />
+[79] iterators_1.0.14 beeswarm_0.4.0 timechange_0.2.0</p>
+</div>
+</div>
+</div>
+</div>
+</div>
+</div>
+</div>
+</div>
+</div>
+
+
+<!-- Adjust MathJax settings so that all math formulae are shown using
+TeX fonts only; see
+https://docs.mathjax.org/en/latest/web/configuration.html. This will make
+the presentation more consistent at the cost of the webpage sometimes
+taking slightly longer to load. Note that this only works because the
+footer is added to webpages before the MathJax javascript. -->
+<script type="text/x-mathjax-config">
+  MathJax.Hub.Config({
+    "HTML-CSS": { availableFonts: ["TeX"] }
+  });
+</script>
+
+
+
+
+</div>
+</div>
+
+</div>
+
+<script>
+
+// add bootstrap table styles to pandoc tables
+function bootstrapStylePandocTables() {
+  $('tr.odd').parent('tbody').parent('table').addClass('table table-condensed');
+}
+$(document).ready(function () {
+  bootstrapStylePandocTables();
+});
+
+
+</script>
+
+<!-- tabsets -->
+
+<script>
+$(document).ready(function () {
+  window.buildTabsets("TOC");
+});
+
+$(document).ready(function () {
+  $('.tabset-dropdown > .nav-tabs > li').click(function () {
+    $(this).parent().toggleClass('nav-tabs-open');
+  });
+});
+</script>
+
+<!-- code folding -->
+<script>
+$(document).ready(function () {
+  window.initializeCodeFolding("hide" === "show");
+});
+</script>
+
+<script>
+$(document).ready(function ()  {
+
+    // temporarily add toc-ignore selector to headers for the consistency with Pandoc
+    $('.unlisted.unnumbered').addClass('toc-ignore')
+
+    // move toc-ignore selectors from section div to header
+    $('div.section.toc-ignore')
+        .removeClass('toc-ignore')
+        .children('h1,h2,h3,h4,h5').addClass('toc-ignore');
+
+    // establish options
+    var options = {
+      selectors: "h1,h2,h3,h4,h5",
+      theme: "bootstrap3",
+      context: '.toc-content',
+      hashGenerator: function (text) {
+        return text.replace(/[.\\/?&!#<>]/g, '').replace(/\s/g, '_');
+      },
+      ignoreSelector: ".toc-ignore",
+      scrollTo: 0
+    };
+    options.showAndHide = true;
+    options.smoothScroll = true;
+
+    // tocify
+    var toc = $("#TOC").tocify(options).data("toc-tocify");
+});
+</script>
+
+<!-- dynamically load mathjax for compatibility with self-contained -->
+<script>
+  (function () {
+    var script = document.createElement("script");
+    script.type = "text/javascript";
+    script.src  = "https://mathjax.rstudio.com/latest/MathJax.js?config=TeX-AMS-MML_HTMLorMML";
+    document.getElementsByTagName("head")[0].appendChild(script);
+  })();
+</script>
+
+</body>
+</html>

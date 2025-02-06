@@ -1,0 +1,483 @@
+---
+title: "SEER data analysis for colon and rectum cancer cases"
+author: "Francesc Castro-Giner"
+date: '`r format(Sys.Date(), "%B %d, %Y")`'
+output: workflowr::wflow_html
+editor_options:
+  chunk_output_type: console
+params:
+  date: '`r format(Sys.Date(), "%B %d, %Y")`'
+  data_dir: ./data/seer
+  ncores: 4
+---
+
+
+## Load libraries, additional functions and data
+
+Setup environment
+```{r setup, include=TRUE, warning=FALSE, message=FALSE}
+knitr::opts_chunk$set(results='asis', echo=TRUE, message=FALSE, warning=FALSE, error=FALSE, fig.align = 'center', fig.width = 3.5, fig.asp = 0.618, dpi = 600, dev = c("png", "pdf"), fig.showtext = FALSE, engine.opts = list(bash = "-l"))
+
+options(stringsAsFactors = FALSE)
+```
+
+
+Load packages
+```{r load-libraries}
+library(tidyverse)
+library(showtext)
+library(foreach)
+library(knitr)
+library(kableExtra)
+library(arsenal)
+library(janitor)
+library(colorblindr)
+
+library(survival)
+library(ggsurvfit)
+library(ggbeeswarm)
+library(ggpubr)
+```
+
+
+Load ggplot theme
+```{r ggplot-theme}
+source("./configuration/rmarkdown/ggplot_theme.R")
+```
+
+Load palettes
+```{r load-palettes}
+source("./configuration/rmarkdown/color_palettes.R")
+```
+
+## Data processing
+
+Load data from patients with metastasis at dx and for patients with subsequent records after primary breast diagnosis.
+```{r load-data}
+data_met_dx <- read_csv(file.path(params$data_dir, 'seerstat_met_at_dx_colon_and_rectum.csv'))
+data_sub_rec <- read_csv(file.path(params$data_dir, 'seerstat_subsequent_records_colon_and_rectum.csv'))
+
+data_colnames_o <- colnames(data_met_dx)
+
+data_met_dx <- clean_names(data_met_dx)
+data_sub_rec <- clean_names(data_sub_rec)
+
+names(data_colnames_o) <- colnames(data_met_dx)
+
+#Selected site names
+primary_sites <- grep('colon|rectum', unique(data_met_dx$site_recode_icd_o_3_who_2008), value = TRUE, ignore.case = TRUE)
+```
+
+Data wrangling for mets at dx
+```{r wrangling-data-met_dx}
+# Number of metastases at known sites
+data_met_dx$seer_combined_mets_at_dx_sum <- data_met_dx %>% 
+  mutate(
+    seer_combined_mets_at_dx_bone_2010 = ifelse(seer_combined_mets_at_dx_bone_2010 == 'Yes', 1, 0),
+    seer_combined_mets_at_dx_brain_2010 = ifelse(seer_combined_mets_at_dx_brain_2010 == 'Yes', 1, 0),
+    seer_combined_mets_at_dx_liver_2010 = ifelse(seer_combined_mets_at_dx_liver_2010 == 'Yes', 1, 0),
+    seer_combined_mets_at_dx_lung_2010 = ifelse(seer_combined_mets_at_dx_lung_2010 == 'Yes', 1, 0)
+  ) %>% 
+  dplyr::select(starts_with("seer_combined_mets_at")) %>% 
+  rowSums()
+  
+
+
+data_met_dx <- data_met_dx %>% 
+  mutate(
+    # Re-class variables
+    survival_months = ifelse(survival_months == 'Unknown', NA, survival_months),
+    survival_months = as.numeric(survival_months),
+    survival_days = 30*survival_months,
+    total_number_of_in_situ_malignant_tumors_for_patient = as.numeric(total_number_of_in_situ_malignant_tumors_for_patient),
+    record_number_recode = as.numeric(record_number_recode),
+    # Site of metastasis
+    seer_combined_mets_at_dx = ifelse(seer_combined_mets_at_dx_sum == 0, 'Other', NA),
+    seer_combined_mets_at_dx = ifelse(seer_combined_mets_at_dx_sum > 1, 'Multiple', seer_combined_mets_at_dx),
+    seer_combined_mets_at_dx = ifelse(seer_combined_mets_at_dx_bone_2010 == 'Yes' & seer_combined_mets_at_dx_sum == 1, 'Bone', seer_combined_mets_at_dx),
+    seer_combined_mets_at_dx = ifelse(seer_combined_mets_at_dx_brain_2010 == 'Yes' & seer_combined_mets_at_dx_sum == 1, 'Brain', seer_combined_mets_at_dx),
+    seer_combined_mets_at_dx = ifelse(seer_combined_mets_at_dx_liver_2010 == 'Yes' & seer_combined_mets_at_dx_sum == 1, 'Liver', seer_combined_mets_at_dx),
+    seer_combined_mets_at_dx = ifelse(seer_combined_mets_at_dx_lung_2010 == 'Yes' & seer_combined_mets_at_dx_sum == 1, 'Lung', seer_combined_mets_at_dx),
+    # Other new variables
+    patient_id_record = paste(patient_id, record_number_recode, sep = "_")
+  )
+```
+
+Data wrangling for subsequent records after primary breast diagnosis
+```{r wrangling-data-sub_rec}
+data_sub_rec <- data_sub_rec %>% 
+  mutate(
+    # Re-class variables
+    survival_months = ifelse(survival_months == 'Unknown', NA, survival_months),
+    survival_months = as.numeric(survival_months),
+    total_number_of_in_situ_malignant_tumors_for_patient = as.numeric(total_number_of_in_situ_malignant_tumors_for_patient),
+    record_number_recode = as.numeric(record_number_recode),
+    # Other new variables
+    patient_id_record = paste(patient_id, record_number_recode, sep = "_")
+  )
+  
+```
+
+Add data to next diagnosis for patients with mets at dx
+```{r add-next-to-met_dx}
+next_pidr <- paste(data_met_dx$patient_id, 1+data_met_dx$record_number_recode, sep = "_")
+
+next_info <- data_sub_rec %>% 
+  filter(patient_id_record %in% next_pidr) %>% 
+  filter(!site_recode_icd_o_3_who_2008 %in% primary_sites) %>% 
+  dplyr::select(
+    patient_id,
+    patient_id_record, record_number_recode,
+    year_of_diagnosis, 
+    site_recode_icd_o_3_who_2008, survival_months, cod_to_site_recode, 
+    cod_to_site_rec_km, seer_cause_specific_death_classification, 
+    seer_other_cause_of_death_classification, vital_status_recode_study_cutoff_used, 
+    patient_id_record) %>% 
+  rename_with(., function(x) paste0('next_', x)) %>% 
+  dplyr::rename(patient_id = next_patient_id) %>% 
+  mutate(prev_patient_id_record = paste(patient_id, next_record_number_recode - 1, sep = "_")) %>% 
+  left_join(
+    data_met_dx %>% 
+      dplyr::select(patient_id, year_of_diagnosis, seer_combined_mets_at_dx) %>% 
+      rename(prev_year_of_diagnosis = year_of_diagnosis)
+    ) %>% 
+  mutate(
+    years_to_next_diagnosis = next_year_of_diagnosis - prev_year_of_diagnosis,
+    next_site = ifelse(next_site_recode_icd_o_3_who_2008 == 'Lung and Bronchus', 'Lung', 'Other'),
+    next_site = ifelse(next_site_recode_icd_o_3_who_2008 == 'Kidney and Renal Pelvis', 'Kidney', next_site),
+    next_site = ifelse(next_site_recode_icd_o_3_who_2008 == 'Brain', 'Brain', next_site),
+    next_site = ifelse(next_site_recode_icd_o_3_who_2008 == 'Bones and Joints', 'Bone', next_site),
+    next_site = ifelse(next_site_recode_icd_o_3_who_2008 == 'Liver', 'Liver', next_site),
+    next_site = ifelse(next_site_recode_icd_o_3_who_2008 == 'Intrahepatic Bile Duct', 'Liver', next_site)
+  ) %>% 
+  dplyr::select(-prev_year_of_diagnosis)
+
+# Remove if next diagnosis happens 5 years after breast diagnosis
+next_info <- next_info %>% 
+  filter(years_to_next_diagnosis <= 5 &
+           next_site != seer_combined_mets_at_dx)
+
+# Join datasets
+data_met_dx <- left_join(data_met_dx, next_info) %>% 
+  mutate(
+    next_diagnosis = ifelse(is.na(next_patient_id_record), 'No', 'Yes'),
+    next_event = ifelse(next_diagnosis == 'Yes', 'New malignancy', 'None'),
+    next_event = ifelse(next_event == 'None' & vital_status_recode_study_cutoff_used == 'Dead', 'Death', next_event)
+  )
+
+# Re-value site
+data_met_dx <- data_met_dx %>% 
+  mutate(
+    next_site = ifelse(next_site_recode_icd_o_3_who_2008 == 'Lung and Bronchus', 'Lung', 'Other'),
+    next_site = ifelse(next_site_recode_icd_o_3_who_2008 == 'Kidney and Renal Pelvis', 'Kidney', next_site),
+    next_site = ifelse(next_site_recode_icd_o_3_who_2008 == 'Brain', 'Brain', next_site),
+    next_site = ifelse(next_site_recode_icd_o_3_who_2008 == 'Bones and Joints', 'Bone', next_site),
+    next_site = ifelse(next_site_recode_icd_o_3_who_2008 == 'Liver', 'Liver', next_site),
+    next_site = ifelse(next_site_recode_icd_o_3_who_2008 == 'Intrahepatic Bile Duct', 'Liver', next_site)
+  )
+```
+
+Process data for non-metastatic patients with subsequent records
+```{r add-next-to-sub_rec}
+# Select breast non-metastatic primaries
+data_m0 <- data_sub_rec %>% 
+  filter(first_malignant_primary_indicator == 'Yes') %>% 
+  filter(site_recode_icd_o_3_who_2008 %in% primary_sites) %>% 
+  filter(
+    grepl("^M0", derived_ajcc_m_7th_ed_2010_2015) |
+    grepl("^c0", derived_seer_combined_m_2016_2017) |
+    grepl("^M0", derived_eod_2018_m_2018)
+  )
+# Select first metastases
+next_pidr <- paste(data_m0$patient_id, 1+data_m0$record_number_recode, sep = "_")
+data_m0_first_mets <- data_sub_rec %>%
+  filter(patient_id_record %in% next_pidr) %>% 
+  filter(!site_recode_icd_o_3_who_2008 %in% primary_sites) %>% 
+  left_join(
+    data_m0 %>% dplyr::select(patient_id, year_of_diagnosis) %>% rename(primary_year_of_diagnosis = year_of_diagnosis)
+  ) %>% 
+  mutate(years_from_primary = year_of_diagnosis - primary_year_of_diagnosis) %>% 
+  filter(years_from_primary <= 5)
+
+# Select second mets
+next_pidr <- paste(data_m0_first_mets$patient_id, 1+data_m0_first_mets$record_number_recode, sep = "_")
+
+next_info <- data_sub_rec %>% 
+  filter(patient_id_record %in% next_pidr) %>% 
+  filter(!site_recode_icd_o_3_who_2008 %in% primary_sites) %>% 
+  dplyr::select(
+    patient_id,
+    patient_id_record, record_number_recode,
+    year_of_diagnosis, 
+    site_recode_icd_o_3_who_2008, survival_months, cod_to_site_recode, 
+    cod_to_site_rec_km, seer_cause_specific_death_classification, 
+    seer_other_cause_of_death_classification, vital_status_recode_study_cutoff_used, 
+    patient_id_record) %>% 
+  rename_with(., function(x) paste0('next_', x)) %>% 
+  dplyr::rename(patient_id = next_patient_id) %>% 
+  mutate(prev_patient_id_record = paste(patient_id, next_record_number_recode - 1, sep = "_")) %>% 
+  left_join(
+    data_m0_first_mets %>% 
+      dplyr::select(patient_id_record, year_of_diagnosis) %>% 
+      rename(prev_patient_id_record = patient_id_record, prev_year_of_diagnosis = year_of_diagnosis)
+    ) %>% 
+  mutate(
+    years_to_next_diagnosis = next_year_of_diagnosis - prev_year_of_diagnosis
+  )
+
+# Remove if next diagnosis happens 5 years after breast diagnosis
+next_info <- next_info %>% filter(years_to_next_diagnosis <= 5)
+
+# Join datasets
+data_m0_first_mets <- left_join(data_m0_first_mets, next_info) %>% 
+  mutate(
+    next_diagnosis = ifelse(is.na(next_patient_id_record), 'No', 'Yes'),
+    next_event = ifelse(next_diagnosis == 'Yes', 'New malignancy', 'None'),
+    next_event = ifelse(next_event == 'None' & vital_status_recode_study_cutoff_used == 'Dead', 'Death', next_event)
+  )
+
+# Re-value site
+data_m0_first_mets <- data_m0_first_mets %>% 
+  mutate(
+    site = ifelse(site_recode_icd_o_3_who_2008 == 'Lung and Bronchus', 'Lung', 'Other'),
+    site = ifelse(site_recode_icd_o_3_who_2008 == 'Kidney and Renal Pelvis', 'Kidney', site),
+    site = ifelse(site_recode_icd_o_3_who_2008 == 'Brain', 'Brain', site),
+    site = ifelse(site_recode_icd_o_3_who_2008 == 'Bones and Joints', 'Bone', site),
+    site = ifelse(site_recode_icd_o_3_who_2008 == 'Liver', 'Liver', site),
+    site = ifelse(site_recode_icd_o_3_who_2008 == 'Intrahepatic Bile Duct', 'Liver', site)
+  )
+
+```
+
+
+## Patients characteristics
+
+### Patients with metastases at diagnosis
+```{r pat-m1-desc}
+# tab_labels <- data_met_dx %>% dplyr::select(-patient_id) %>% colnames()
+tab_labels <- c(
+  'year_of_diagnosis', 'age_recode_with_1_year_olds', 
+  'total_number_of_in_situ_malignant_tumors_for_patient', 'survival_months', 
+  'vital_status_recode_study_cutoff_used', 
+  "next_diagnosis", "years_to_next_diagnosis", "next_site")
+use_formula <- as.formula(paste0('seer_combined_mets_at_dx ~', paste(tab_labels, collapse = '+')))
+res_tab <- tableby(use_formula, data=data_met_dx) 
+summary(res_tab, pfootnote = TRUE)
+
+tab_labels <- c(
+  "next_diagnosis", "next_event", "years_to_next_diagnosis", "next_site", 'survival_months')
+use_formula <- as.formula(paste0('seer_combined_mets_at_dx ~', paste(tab_labels, collapse = '+')))
+res_tab <- tableby(use_formula, data=data_met_dx) 
+summary(res_tab, pfootnote = TRUE)
+```
+
+
+### Patients without metastases at diagnosis
+```{r pat-m1-0-desc}
+# tab_labels <- data_met_dx %>% dplyr::select(-patient_id) %>% colnames()
+tab_labels <- c(
+  'year_of_diagnosis', 'age_recode_with_1_year_olds', 
+  'total_number_of_in_situ_malignant_tumors_for_patient', 'survival_months', 
+  'vital_status_recode_study_cutoff_used', 
+  "next_diagnosis", "years_to_next_diagnosis", "next_cod_to_site_recode")
+use_formula <- as.formula(paste0('site ~', paste(tab_labels, collapse = '+')))
+res_tab <- tableby(use_formula, data=data_m0_first_mets) 
+summary(res_tab, pfootnote = TRUE)
+
+tab_labels <- c(
+  "next_diagnosis", "next_event", "years_to_next_diagnosis", 'survival_months')
+use_formula <- as.formula(paste0('site ~', paste(tab_labels, collapse = '+')))
+res_tab <- tableby(use_formula, data=data_m0_first_mets) 
+summary(res_tab, pfootnote = TRUE)
+```
+
+
+
+## Met sites : Liver-Lung
+### New metastasis-Free Survival (3 year months censoring)
+
+Using the patients with metastatic cancer at diagnosis, we analyze the length of time from diagnosis  that a patient is still alive and the cancer has not spread to other parts of the body. We censored patients with incomplete follow-up, death attributable to other cases or death with unknown/missing cause. 
+
+```{r mfs-ll-3y, fig.width = 7.2}
+n_months <- 3*12
+use_subset <- data_met_dx %>% 
+  filter(seer_combined_mets_at_dx %in% c('Liver', 'Lung') )
+use_data <- use_subset %>%
+  mutate(
+    mfs_months = 12*use_subset$years_to_next_diagnosis,
+    mfs_months = ifelse(is.na(mfs_months), survival_months, mfs_months),
+    status = ifelse(!is.na(mfs_months), 1, 0),
+    status = ifelse(status == 0 & seer_cause_specific_death_classification == 'Dead (attributable to this cancer dx)', 1, status),
+    status = ifelse(mfs_months > n_months, 0, status),
+    mfs_months =  ifelse(mfs_months > n_months, n_months, mfs_months)
+  ) %>% 
+  filter(
+    survival_months_flag == 'Complete dates are available and there are more than 0 days of survival'
+  )
+
+km_fit <- survfit2(Surv(mfs_months, status) ~ seer_combined_mets_at_dx, data=use_data)
+
+sdiff_res <- survdiff(Surv(mfs_months, status) ~ seer_combined_mets_at_dx, data=use_data)
+coxph_res <- coxph(Surv(mfs_months, status) ~ seer_combined_mets_at_dx, data=use_data)
+```
+
+#### KM plot
+```{r mfs-ll-km-3y}
+ggsurvfit(km_fit) +
+  scale_x_continuous(
+    limits = c(0, n_months),
+    expand = c(0, 0)
+  ) +
+  scale_color_manual(values = site_palette) +
+  theme_project +
+  labs(
+    x = "Months",
+    y = "Next metastasis-free survival",
+    caption = paste0("Log-rank P value = ", format.pval(sdiff_res$pvalue,2))
+  )
+```
+
+#### Log-rank test
+```{r mfs-ll-log-rank-3y}
+broom::tidy(sdiff_res) %>% 
+  mutate(`(O-E)^2/E` = ((obs-exp)^2)/exp) %>% 
+  kable(caption = "Test Survival Curve Differences.") %>% 
+  kable_styling(bootstrap_options = c("striped", "hover"), full_width = F)
+```
+
+#### Cox regression model
+```{r mfs-ll-coxph-3y}
+# coxph_res %>% 
+#   gtsummary::tbl_regression(exp = TRUE) %>% 
+#   gtsummary::as_gt()  %>%
+#   gt::tab_source_note(gt::md("*Cox regression model*"))
+
+coxph_res %>% broom::tidy() %>% 
+  mutate(
+    ci.l = estimate - 1.96*std.error,
+    ci.u = estimate + 1.96*std.error 
+  ) %>% 
+  dplyr::rename(HR = estimate) %>% 
+  mutate(
+    HR = exp(HR),
+    ci.u = exp(ci.u),
+    ci.l = exp(ci.l),
+    term = gsub('seer_combined_mets_at_dx', '', term),
+    p.value = format.pval(p.value)) %>% 
+  kable(caption = "Cox PH model") %>% 
+  kable_styling(bootstrap_options = c("striped", "hover"), full_width = F)
+```
+
+#### Distribution
+
+##### Raincloud plot
+```{r mfs-ll-dist-raincloud-3y}
+use_data %>% 
+  ggplot(aes(seer_combined_mets_at_dx, mfs_months, 
+             fill = seer_combined_mets_at_dx,
+             color = seer_combined_mets_at_dx)) +
+  ggdist::stat_halfeye(
+    adjust = .5, 
+    width = .6, 
+    .width = 0, 
+    justification = -.3, 
+    point_colour = NA) + 
+  geom_boxplot(
+    width = .20, 
+    outlier.shape = NA,
+    alpha = 0.3, 
+    color = 'white'
+  ) +
+  # geom_boxplot(alpha = 0.4, 
+  #              color = 'black', 
+  #              outlier.shape = NA,
+  #              show.legend = FALSE, 
+  #              size = 0.25, 
+  #              fatten = 1,
+  #              width = .20) +
+ # ## add justified jitter from the {gghalves} package
+ #  gghalves::geom_half_point(
+ #    ## draw jitter on the left
+ #    side = "l", 
+ #    ## control range of jitter
+ #    range_scale = .4, 
+ #    ## add some transparency
+ #    alpha = .2, 
+ #    size = 0.7
+ #  ) + 
+  geom_point(
+    size = 0.5, pch = 16,
+    alpha = .5,
+    position = position_jitter(
+      seed = 1, width = .1
+    )
+  ) + 
+  geom_boxplot(
+    width = .20, 
+    outlier.shape = NA,
+    alpha = 0, 
+    color = 'black'
+  ) +
+  scale_fill_manual(values = site_palette) + 
+  scale_color_manual(values = site_palette) +
+  guides(color = 'none', fill = 'none') +
+  stat_compare_means(method = "wilcox.test", 
+                     label.y = n_months+0.05*n_months, 
+                     size = geom_text_size)+ 
+  labs(
+    x = '',
+    y = 'Time (months)'
+  )
+```
+
+
+#### Survival rate at endpoint
+```{r mfs-ll-dist-survival_rate_at_3y, fig.width=2.5, fig.asp=0.8}
+plot_data <- use_data %>% 
+  group_by(seer_combined_mets_at_dx) %>% 
+  summarise(
+    n = n(),
+    n_surv = sum(mfs_months == n_months)
+  ) %>% 
+  mutate(
+    p_surv = n_surv/n,
+    n_events = n - n_surv)
+
+ft_res <- fisher.test(plot_data %>% column_to_rownames('seer_combined_mets_at_dx') %>% dplyr::select(n_events, n_surv), alternative = "greater") %>% 
+  broom::tidy() %>% 
+  mutate(
+    group1 = 'Liver',
+    group2 = 'Lung',
+    .y. = 'p_surv',
+    y.position = max(plot_data$p_surv)+0.10*max(plot_data$p_surv),
+    p.value = format.pval(p.value, 2),
+    or_ci = paste0(round(estimate, 2), ' (', round(conf.low,2),'-', round(conf.high,2),')')
+  )
+
+plot_data %>% 
+  ggplot(aes(seer_combined_mets_at_dx, p_surv)) +
+  geom_col(aes(fill = seer_combined_mets_at_dx), width = 0.5) +
+  scale_fill_manual(values = site_palette) +
+  scale_y_continuous(
+    labels = scales::percent,
+    expand = expansion(mult = c(0, 0.1))
+    ) +
+  guides(color = 'none', fill = 'none') +
+  stat_pvalue_manual(ft_res, label = "P = {p.value}", 
+                     label.size = geom_text_size) +
+  labs(
+    x = '',
+    y = 'Percentage of patients',
+    caption = paste(
+      'Odds ratio (95%CI) = ', ft_res$or_ci, '\n',
+      'P = one-sided Fisher test P value'
+      )
+  )
+```
+
+
+
+
+
+
+

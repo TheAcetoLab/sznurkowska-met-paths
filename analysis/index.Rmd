@@ -1,5 +1,5 @@
 ---
-title: "Home"
+title: "Met-Paths"
 site: workflowr::wflow_site
 output:
   workflowr::wflow_html:
@@ -8,4 +8,9 @@ editor_options:
   chunk_output_type: console
 ---
 
-Welcome to my research website.
+## Analysis of patient data
+
+- [Swiss breast cancer cohort](patients_cohort_analysis.html)
+- [SEER: TN breast cancer](seer_brca_analysis.html)
+- [SEER: colorectal cancer](seer_colorectal_analysis.html)
+- [SEER: PDAC cancer](seer_brca_analysis.html)

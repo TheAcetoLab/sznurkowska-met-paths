@@ -1,0 +1,656 @@
+---
+title: "USB and USZ metastatic BRCA patients"
+subtitle: "Data analysis"
+author: "Francesc Castro-Giner"
+date: '`r format(Sys.Date(), "%B %d, %Y")`'
+output: workflowr::wflow_html
+editor_options:
+  chunk_output_type: console
+params:
+  date: '`r format(Sys.Date(), "%B %d, %Y")`'
+---
+
+## Load libraries, additional functions and data
+
+Setup environment
+```{r setup, include=TRUE, warning=FALSE, message=FALSE}
+knitr::opts_chunk$set(results='asis', echo=TRUE, message=FALSE, warning=FALSE, error=FALSE, fig.align = 'center', fig.width = 3.5, fig.asp = 0.618, dpi = 600, dev = c("png", "pdf"))
+
+options(stringsAsFactors = FALSE)
+
+use_seed <- 1100101
+set.seed(use_seed)
+```
+
+Load packages
+```{r load-libraries}
+library(tidyverse)
+library(showtext)
+library(foreach)
+library(DT)
+library(knitr)
+library(kableExtra)
+library(arsenal)
+library(ComplexHeatmap)
+library(viridis)
+library(RColorBrewer)
+library(circlize)
+library(ggalluvial)
+library(survival)
+library(ranger)
+library(ggfortify)
+library(colorblindr)
+library(ggpubr)
+library(magrittr)
+library(ggsurvfit)
+library(gtsummary)
+```
+
+Set font family for figures
+```{r set-font, eval = FALSE}
+font_add("Helvetica", "./configuration/fonts/Helvetica.ttc")
+showtext_auto()
+```
+
+Load ggplot theme
+```{r ggplot-theme}
+source("./configuration/rmarkdown/ggplot_theme.R")
+```
+
+Load palettes
+```{r load-palettes}
+source("./configuration/rmarkdown/color_palettes.R")
+```
+
+Clean files generated in previous runs
+```{r clean-files}
+rmd_file <- current_input()
+if(!is.null(rmd_file)) {
+  figures_dir <- file.path('./docs/figure',rmd_file)
+  if(dir.exists(figures_dir)) {
+    unlink(file.path(figures_dir, "*"))
+  }
+}
+
+```
+
+Load data
+```{r load-data}
+db_usb <- readRDS('./data/patients/usb_metastatic_brca_patients.rds')
+db_usz <- readRDS('./data/patients/usz_metastatic_brca_patients.rds')
+```
+
+## Data wrangling
+Integration of USB and USZ data
+```{r db-integration}
+# db_usb <- readRDS('./data/patients/usb_metastatic_brca_patients.rds')
+# db_usz <- readRDS('./data/patients/usz_metastatic_brca_patients.rds')
+# setdiff(colnames(db_usz), colnames(db_usb))
+
+db_usb %<>% 
+  # Rename variables
+  dplyr::rename(metastasis_count_nb = metastasis_count) %>% 
+  # Metastasis sites
+  dplyr::rename(
+    lymph_nodes = distant_limph_nodes_lymphangiosis,
+    peritoneum = peritoneal_retro_peritoneal
+  ) %>% 
+  # Other variables
+  mutate(
+    time_from_event_to_loss_to_follow_up = NA,
+    loss_to_follow_up = NA,
+    surv_status = 'death',
+    patient_number = paste0('usb_', patient_number),
+    cohort = 'USB'
+  ) %>% 
+  # Time variables
+  mutate_at(vars(starts_with('time_')), as.numeric)
+
+db_usz %<>% 
+  # Metastasis sites
+  dplyr::mutate(
+    age_at_primary_diagnosis = NA,
+    other = ifelse(adrenal, TRUE, other),
+    other = ifelse(adnexal, TRUE, other)
+  ) %>% 
+  dplyr::select(-adrenal, -adnexal) %>% 
+  # Other variables
+  mutate(
+    patient_number = paste0('usz_', patient_number),
+    cohort = 'USZ'
+  ) %>% 
+  # Time variables
+  mutate_at(vars(starts_with('time_')), as.numeric)
+
+use_cols <- colnames(db_usb)[colnames(db_usb) %in% colnames(db_usz)]
+
+data <-rbind(db_usb[,use_cols], db_usz[,use_cols])
+```
+
+Add mono-metastasis to bone as first event
+```{r dw-first-bone}
+pat_met_bone_first <- data %>% 
+  filter(metastasis_nb == 1 & bone & metastasis_count_nb == 1) %>% 
+  pull(patient_number)
+
+data %<>% 
+  mutate(
+    metastasis_bone_first = patient_number %in% pat_met_bone_first,
+  )
+```
+
+
+Generate additional variables
+```{r gen-add-var}
+met_sites <- data %>% dplyr::select(lymph_nodes:other) %>% colnames()
+```
+
+Generate patient level data
+```{r gen-patient-data}
+patient_data <- data %>% dplyr::select(
+  patient_number:her2,
+  age_at_primary_diagnosis, 
+  metastasis_lung_first:molecular_subtype, 
+  loss_to_follow_up:cohort,
+  time_from_primary_diagnosis_to_death,
+  time_from_primary_diagnosis_to_first_met
+  ) %>% unique
+
+patient_data_sites <- data %>% 
+  select(patient_number, lymph_nodes:other) %>%
+  group_by(patient_number) %>% 
+  summarise_at(
+    vars(lymph_nodes:other), sum, na.rm = TRUE
+  ) %>% 
+  mutate_at(
+    vars(lymph_nodes:other), function(x) x>0
+  )
+
+patient_data %<>% 
+  left_join(patient_data_sites)
+```
+
+## Data tables
+
+### Table : Patient characteristic
+```{r db-table-patient}
+patient_data %>% 
+  select(patient_number, cohort,
+         er, pr, hr, her2, molecular_subtype,
+         age_at_primary_diagnosis,
+         surv_status,
+         time_from_primary_diagnosis_to_death,
+         time_from_primary_diagnosis_to_first_met,
+         metastasis_lung_first,
+         metastasis_liver_first,
+         lymph_nodes:other
+         ) %>% 
+  dplyr::rename(
+    days_from_primary_diagnosis_to_death = time_from_primary_diagnosis_to_death,
+    days_from_primary_diagnosis_to_first_met = time_from_primary_diagnosis_to_first_met
+  ) %>%
+  datatable(., 
+            rownames = FALSE, 
+            filter = 'top', 
+            caption = 'Patients characteristics',
+            extensions = 'Buttons', 
+            options = list(
+              dom = 'Blfrtip',
+              buttons = c('csv', 'excel')
+            )) %>% 
+  formatRound(c('age_at_primary_diagnosis'), digits = 2) 
+```
+
+
+### Table : Metastasis events
+In the table below each row is a clinical event (diagnosis, metastasis), so each patient is represented in multiple rows
+```{r db-table-events}
+data %>% 
+  mutate(
+    event = ifelse(
+      is.na(time_from_previous_event),
+      'inital_diagnosis',
+      'metastasis'
+    )
+  ) %>% 
+  select(
+    patient_number, cohort,
+    metastasis_nb,
+    event,
+    time_to_death,
+    time_from_previous_event,
+    next_event,
+    time_to_next_event,
+    lymph_nodes:other
+  ) %>% 
+  rename_with(., ~ gsub('time_', 'days_', .x)) %>% 
+  datatable(., 
+            rownames = FALSE, 
+            filter = 'top', 
+            caption = 'Metastasis events',
+            extensions = 'Buttons', 
+            options = list(
+              dom = 'Blfrtip',
+              buttons = c('csv', 'excel')
+            ))
+```
+
+## Data exploration for integrity
+
+```{r data-exploration-integrity}
+tab_labels <- data %>% dplyr::select(-patient_number, -starts_with("metastasis_sites")) %>% colnames()
+use_formula <- as.formula(paste0('cohort ~', paste(tab_labels, collapse = '+')))
+res_tab <- tableby(use_formula, data=data) 
+summary(res_tab, pfootnote = TRUE)
+```
+
+
+## Survival analysis Lung vs Liver (monometastasis)
+
+Here we compare patients with first metastasis to Lung versus Liver. Only monometastasis are accepted.
+
+### Time to next event
+
+Here we evaluate the time to the next event (metastasis or death)
+```{r met-lung-liver-mono-time2next, fig.asp = 0.9, fig.width=5.2}
+use_data <- data %>% 
+  filter(metastasis_nb == 1) %>% 
+  mutate(
+    date_of_study_end = ifelse(cohort == 'USZ', "2023-03-01", NA),
+    date_of_study_end = as.Date(date_of_study_end),
+    time_to_study_end=  date_of_study_end - date_of_metastasis,
+    time = time_to_next_event,
+    time = ifelse(is.na(time), time_from_event_to_loss_to_follow_up, time),
+    status = ifelse(next_event == 'cut_off' | next_event == 'loss_to_follow_up', 0, 1)
+  )
+
+use_data_lung <- use_data %>%  filter(metastasis_lung_first) %>% mutate(caterogy = 'Lung')
+use_data_liver <- use_data %>%  filter(metastasis_liver_first) %>% mutate(caterogy = 'Liver')
+use_data <- rbind(use_data_lung, use_data_liver) %>% 
+  mutate(
+    cohort_caterogy = paste0(cohort, '-', caterogy),
+    caterogy = factor(caterogy, levels = c('Lung', 'Liver'))
+    )
+  
+
+sfit <- survfit(Surv(time, status) ~ caterogy, data=use_data)
+sdiff <- survdiff(Surv(time, status) ~ caterogy, data=use_data)
+sfit2 <- survfit2(Surv(time, status) ~ caterogy, data=use_data)
+coxph_res <- coxph(Surv(time, status) ~ caterogy, data=use_data)
+# broom::tidy(sdiff)
+# broom::glance(sdiff)
+
+ggsurvfit(sfit2) +
+  labs(
+    x = "Days from metastasis diagnosis",
+    y = "Overall survival probability",
+    caption = paste("log-rank p-value =", format.pval(sdiff$pvalue, digits = 2))
+  ) + 
+  # add_confidence_interval() +
+  add_risktable() +
+  scale_color_manual(values = site_palette) +
+  theme_project
+
+summary(sfit)$table %>%
+  kbl(caption = 'Kaplan-Meier estimates.') %>%
+  kable_paper(bootstrap_options = c("striped", "hover", "condensed"), full_width = F)
+
+
+
+coxph_res %>% broom::tidy() %>% 
+  mutate(
+    ci.l = estimate - 1.96*std.error,
+    ci.u = estimate + 1.96*std.error 
+  ) %>% 
+  dplyr::rename(HR = estimate) %>% 
+  mutate(
+    HR = exp(HR),
+    ci.u = exp(ci.u),
+    ci.l = exp(ci.l),
+    term = gsub('caterogy', '', term),
+    p.value = format.pval(p.value)) %>% 
+  kable(caption = "Cox PH model") %>% 
+  kable_styling(bootstrap_options = c("striped", "hover"), full_width = F)
+```
+
+
+### Time to death
+```{r met-lung-liver-mono-time2death, fig.asp = 0.9, fig.width=5.2}
+use_data <- data %>% 
+  filter(metastasis_nb == 1) %>% 
+  mutate(
+    date_of_study_end = ifelse(cohort == 'USZ', "2023-03-01", NA),
+    date_of_study_end = as.Date(date_of_study_end),
+    time_to_study_end=  date_of_study_end - date_of_metastasis,
+    time = time_to_death,
+    time = ifelse(surv_status == 'alive', time_to_study_end, time),
+    time = ifelse(is.na(time), time_from_event_to_loss_to_follow_up, time),
+    status = ifelse(is.na(time_to_death), 0, 1)
+  )
+
+use_data_lung <- use_data %>%  filter(metastasis_lung_first) %>% mutate(caterogy = 'Lung')
+use_data_liver <- use_data %>%  filter(metastasis_liver_first) %>% mutate(caterogy = 'Liver')
+use_data <- rbind(use_data_lung, use_data_liver) %>% 
+  mutate(
+    cohort_caterogy = paste0(cohort, '-', caterogy),
+    caterogy = factor(caterogy, levels = c('Lung', 'Liver'))
+    )
+
+sfit <- survfit(Surv(time, status) ~ caterogy, data=use_data)
+sdiff <- survdiff(Surv(time, status) ~ caterogy, data=use_data)
+sfit2 <- survfit2(Surv(time, status) ~ caterogy, data=use_data)
+coxph_res <- coxph(Surv(time, status) ~ caterogy, data=use_data)
+
+# broom::tidy(sdiff)
+# broom::glance(sdiff)
+
+ggsurvfit(sfit2) +
+  labs(
+    x = "Days from metastasis diagnosis",
+    y = "Overall survival probability",
+    caption = paste("log-rank p-value =", format.pval(sdiff$pvalue, digits = 2))
+  ) + 
+  # add_confidence_interval() +
+  add_risktable() +
+  scale_color_manual(values = site_palette) +
+  theme_project
+
+
+summary(sfit2)$table %>%
+  kbl(caption = 'Kaplan-Meier estimates.') %>%
+  kable_paper(bootstrap_options = c("striped", "hover", "condensed"), full_width = F)
+
+
+coxph_res %>% broom::tidy() %>% 
+  mutate(
+    ci.l = estimate - 1.96*std.error,
+    ci.u = estimate + 1.96*std.error 
+  ) %>% 
+  dplyr::rename(HR = estimate) %>% 
+  mutate(
+    HR = exp(HR),
+    ci.u = exp(ci.u),
+    ci.l = exp(ci.l),
+    term = gsub('caterogy', '', term),
+    p.value = format.pval(p.value)) %>% 
+  kable(caption = "Cox PH model") %>% 
+  kable_styling(bootstrap_options = c("striped", "hover"), full_width = F)
+```
+
+
+## Survival analysis Bone vs Liver (monometastasis)
+
+Here we compare patients with first metastasis to Lung versus Liver. Only monometastasis are accepted.
+
+### Time to next event
+
+Here we evaluate the time to the next event (metastasis or death)
+```{r met-bone-liver-mono-time2next, fig.asp = 0.9, fig.width=5.2}
+use_data <- data %>% 
+  filter(metastasis_nb == 1) %>% 
+  mutate(
+    date_of_study_end = ifelse(cohort == 'USZ', "2023-03-01", NA),
+    date_of_study_end = as.Date(date_of_study_end),
+    time_to_study_end=  date_of_study_end - date_of_metastasis,
+    time = time_to_next_event,
+    time = ifelse(is.na(time), time_from_event_to_loss_to_follow_up, time),
+    status = ifelse(next_event == 'cut_off' | next_event == 'loss_to_follow_up', 0, 1)
+  )
+
+use_data_bone <- use_data %>%  filter(metastasis_bone_first) %>% mutate(caterogy = 'Bone')
+use_data_liver <- use_data %>%  filter(metastasis_liver_first) %>% mutate(caterogy = 'Liver')
+use_data <- rbind(use_data_bone, use_data_liver) %>% 
+  mutate(
+    cohort_caterogy = paste0(cohort, '-', caterogy),
+    caterogy = factor(caterogy, levels = c('Liver', 'Bone'))
+    )
+  
+
+sfit <- survfit(Surv(time, status) ~ caterogy, data=use_data)
+sdiff <- survdiff(Surv(time, status) ~ caterogy, data=use_data)
+sfit2 <- survfit2(Surv(time, status) ~ caterogy, data=use_data)
+coxph_res <- coxph(Surv(time, status) ~ caterogy, data=use_data)
+# broom::tidy(sdiff)
+# broom::glance(sdiff)
+
+ggsurvfit(sfit2) +
+  labs(
+    x = "Days from metastasis diagnosis",
+    y = "Overall survival probability",
+    caption = paste("log-rank p-value =", format.pval(sdiff$pvalue, digits = 2))
+  ) + 
+  # add_confidence_interval() +
+  add_risktable() +
+  scale_color_manual(values = site_palette) +
+  theme_project
+
+summary(sfit)$table %>%
+  kbl(caption = 'Kaplan-Meier estimates.') %>%
+  kable_paper(bootstrap_options = c("striped", "hover", "condensed"), full_width = F)
+
+
+
+coxph_res %>% broom::tidy() %>% 
+  mutate(
+    ci.l = estimate - 1.96*std.error,
+    ci.u = estimate + 1.96*std.error 
+  ) %>% 
+  dplyr::rename(HR = estimate) %>% 
+  mutate(
+    HR = exp(HR),
+    ci.u = exp(ci.u),
+    ci.l = exp(ci.l),
+    term = gsub('caterogy', '', term),
+    p.value = format.pval(p.value)) %>% 
+  kable(caption = "Cox PH model") %>% 
+  kable_styling(bootstrap_options = c("striped", "hover"), full_width = F)
+```
+
+
+### Time to death: 5-years interval
+```{r met-bone-liver-mono-time2death-5y, fig.asp = 0.9, fig.width=5.2}
+interval_thrs_days <- 5*365
+use_data <- data %>% 
+  filter(metastasis_nb == 1) %>% 
+  mutate(
+    date_of_study_end = ifelse(cohort == 'USZ', "2023-03-01", NA),
+    date_of_study_end = as.Date(date_of_study_end),
+    time_to_study_end=  date_of_study_end - date_of_metastasis,
+    time = time_to_death,
+    time = ifelse(surv_status == 'alive', time_to_study_end, time),
+    time = ifelse(is.na(time), time_from_event_to_loss_to_follow_up, time),
+    status = ifelse(is.na(time_to_death), 0, 1),
+    
+    interval_censor = time > interval_thrs_days,
+    time = ifelse(interval_censor, interval_thrs_days, time),
+    status = ifelse(interval_censor, 0, status)
+  )
+
+use_data_bone <- use_data %>%  filter(metastasis_bone_first) %>% mutate(caterogy = 'Bone')
+use_data_liver <- use_data %>%  filter(metastasis_liver_first) %>% mutate(caterogy = 'Liver')
+use_data <- rbind(use_data_bone, use_data_liver)  %>% 
+  mutate(
+    cohort_caterogy = paste0(cohort, '-', caterogy),
+    caterogy = factor(caterogy, levels = c('Liver', 'Bone'))
+    )
+
+sfit <- survfit(Surv(time, status) ~ caterogy, data=use_data)
+sdiff <- survdiff(Surv(time, status) ~ caterogy, data=use_data)
+sfit2 <- survfit2(Surv(time, status) ~ caterogy, data=use_data)
+coxph_res <- coxph(Surv(time, status) ~ caterogy, data=use_data)
+
+# broom::tidy(sdiff)
+# broom::glance(sdiff)
+
+ggsurvfit(sfit2) +
+  labs(
+    x = "Days from metastasis diagnosis",
+    y = "Overall survival probability",
+    caption = paste("log-rank p-value =", format.pval(sdiff$pvalue, digits = 2))
+  ) + 
+  # add_confidence_interval() +
+  add_risktable() +
+  scale_color_manual(values = site_palette) +
+  theme_project
+
+summary(sfit2)$table %>%
+  kbl(caption = 'Kaplan-Meier estimates.') %>%
+  kable_paper(bootstrap_options = c("striped", "hover", "condensed"), full_width = F)
+
+
+coxph_res %>% broom::tidy() %>% 
+  mutate(
+    ci.l = estimate - 1.96*std.error,
+    ci.u = estimate + 1.96*std.error 
+  ) %>% 
+  dplyr::rename(HR = estimate) %>% 
+  mutate(
+    HR = exp(HR),
+    ci.u = exp(ci.u),
+    ci.l = exp(ci.l),
+    term = gsub('caterogy', '', term),
+    p.value = format.pval(p.value)) %>% 
+  kable(caption = "Cox PH model") %>% 
+  kable_styling(bootstrap_options = c("striped", "hover"), full_width = F)
+
+```
+
+
+## Survival analysis Bone vs Lung (monometastasis)
+
+Here we compare patients with first metastasis to Lung versus Lung. Only monometastasis are accepted.
+
+### Time to next event
+
+Here we evaluate the time to the next event (metastasis or death)
+```{r met-bone-lung-mono-time2next, fig.asp = 0.9, fig.width=5.2}
+use_data <- data %>% 
+  filter(metastasis_nb == 1) %>% 
+  mutate(
+    date_of_study_end = ifelse(cohort == 'USZ', "2023-03-01", NA),
+    date_of_study_end = as.Date(date_of_study_end),
+    time_to_study_end=  date_of_study_end - date_of_metastasis,
+    time = time_to_next_event,
+    time = ifelse(is.na(time), time_from_event_to_loss_to_follow_up, time),
+    status = ifelse(next_event == 'cut_off' | next_event == 'loss_to_follow_up', 0, 1)
+  )
+
+use_data_bone <- use_data %>%  filter(metastasis_bone_first) %>% mutate(caterogy = 'Bone')
+use_data_lung <- use_data %>%  filter(metastasis_lung_first) %>% mutate(caterogy = 'Lung')
+use_data <- rbind(use_data_bone, use_data_lung) %>% 
+  mutate(
+    cohort_caterogy = paste0(cohort, '-', caterogy),
+    caterogy = factor(caterogy, levels = c('Lung', 'Bone'))
+    )
+  
+
+sfit <- survfit(Surv(time, status) ~ caterogy, data=use_data)
+sdiff <- survdiff(Surv(time, status) ~ caterogy, data=use_data)
+sfit2 <- survfit2(Surv(time, status) ~ caterogy, data=use_data)
+coxph_res <- coxph(Surv(time, status) ~ caterogy, data=use_data)
+# broom::tidy(sdiff)
+# broom::glance(sdiff)
+
+ggsurvfit(sfit2) +
+  labs(
+    x = "Days from metastasis diagnosis",
+    y = "Overall survival probability",
+    caption = paste("log-rank p-value =", format.pval(sdiff$pvalue, digits = 2))
+  ) + 
+  # add_confidence_interval() +
+  add_risktable() +
+  scale_color_manual(values = site_palette) +
+  theme_project
+
+summary(sfit)$table %>%
+  kbl(caption = 'Kaplan-Meier estimates.') %>%
+  kable_paper(bootstrap_options = c("striped", "hover", "condensed"), full_width = F)
+
+
+
+coxph_res %>% broom::tidy() %>% 
+  mutate(
+    ci.l = estimate - 1.96*std.error,
+    ci.u = estimate + 1.96*std.error 
+  ) %>% 
+  dplyr::rename(HR = estimate) %>% 
+  mutate(
+    HR = exp(HR),
+    ci.u = exp(ci.u),
+    ci.l = exp(ci.l),
+    term = gsub('caterogy', '', term),
+    p.value = format.pval(p.value)) %>% 
+  kable(caption = "Cox PH model") %>% 
+  kable_styling(bootstrap_options = c("striped", "hover"), full_width = F)
+```
+
+
+### Time to death: 5-years interval
+```{r met-bone-lung-mono-time2death-5y, fig.asp = 0.9, fig.width=5.2}
+interval_thrs_days <- 5*365
+use_data <- data %>% 
+  filter(metastasis_nb == 1) %>% 
+  mutate(
+    date_of_study_end = ifelse(cohort == 'USZ', "2023-03-01", NA),
+    date_of_study_end = as.Date(date_of_study_end),
+    time_to_study_end=  date_of_study_end - date_of_metastasis,
+    time = time_to_death,
+    time = ifelse(surv_status == 'alive', time_to_study_end, time),
+    time = ifelse(is.na(time), time_from_event_to_loss_to_follow_up, time),
+    status = ifelse(is.na(time_to_death), 0, 1),
+    
+    interval_censor = time > interval_thrs_days,
+    time = ifelse(interval_censor, interval_thrs_days, time),
+    status = ifelse(interval_censor, 0, status)
+  )
+
+use_data_bone <- use_data %>%  filter(metastasis_bone_first) %>% mutate(caterogy = 'Bone')
+use_data_lung <- use_data %>%  filter(metastasis_lung_first) %>% mutate(caterogy = 'Lung')
+use_data <- rbind(use_data_bone, use_data_lung)  %>% 
+  mutate(
+    cohort_caterogy = paste0(cohort, '-', caterogy),
+    caterogy = factor(caterogy, levels = c('Lung', 'Bone'))
+    )
+
+sfit <- survfit(Surv(time, status) ~ caterogy, data=use_data)
+sdiff <- survdiff(Surv(time, status) ~ caterogy, data=use_data)
+sfit2 <- survfit2(Surv(time, status) ~ caterogy, data=use_data)
+coxph_res <- coxph(Surv(time, status) ~ caterogy, data=use_data)
+
+# broom::tidy(sdiff)
+# broom::glance(sdiff)
+
+ggsurvfit(sfit2) +
+  labs(
+    x = "Days from metastasis diagnosis",
+    y = "Overall survival probability",
+    caption = paste("log-rank p-value =", format.pval(sdiff$pvalue, digits = 2))
+  ) + 
+  # add_confidence_interval() +
+  add_risktable() +
+  scale_color_manual(values = site_palette) +
+  theme_project
+
+summary(sfit2)$table %>%
+  kbl(caption = 'Kaplan-Meier estimates.') %>%
+  kable_paper(bootstrap_options = c("striped", "hover", "condensed"), full_width = F)
+
+
+coxph_res %>% broom::tidy() %>% 
+  mutate(
+    ci.l = estimate - 1.96*std.error,
+    ci.u = estimate + 1.96*std.error 
+  ) %>% 
+  dplyr::rename(HR = estimate) %>% 
+  mutate(
+    HR = exp(HR),
+    ci.u = exp(ci.u),
+    ci.l = exp(ci.l),
+    term = gsub('caterogy', '', term),
+    p.value = format.pval(p.value)) %>% 
+  kable(caption = "Cox PH model") %>% 
+  kable_styling(bootstrap_options = c("striped", "hover"), full_width = F)
+
+```
+
+

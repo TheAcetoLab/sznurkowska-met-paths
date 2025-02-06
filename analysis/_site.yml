@@ -1,7 +1,7 @@
-name: "sznurkowska-met-paths"
+name: met-paths
 output_dir: ../docs
 navbar:
-  title: "sznurkowska-met-paths"
+  title: met-paths
   left:
   - text: Home
     href: index.html
@@ -9,9 +9,16 @@ navbar:
     href: about.html
   - text: License
     href: license.html
+  right:
+  - icon: fab fa-github
+    text: Source code
+    href: https://github.com/fcg-bio/sznurkowska-met-paths
 output:
   workflowr::wflow_html:
     toc: yes
     toc_float: yes
     theme: cosmo
     highlight: textmate
+    number_sections: yes
+    code_folding: hide
+    toc_depth: 5

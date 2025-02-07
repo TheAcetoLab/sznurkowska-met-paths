@@ -1,0 +1,1562 @@
+---
+title: "10x RNA-seq analysis of MVT1 cancer and microenvironment in tumor and mets"
+subtitle: "Analysis of TME cells in primary tumor, lung and liver metastases"
+author: "Francesc Castro-Giner"
+date: '`r format(Sys.Date(), "%B %d, %Y")`'
+output: workflowr::wflow_html
+editor_options:
+  chunk_output_type: console
+params:
+  date: '`r format(Sys.Date(), "%B %d, %Y")`'
+  cellranger_count_dir: ./data/rnaseq/p26532_o28268/pipelines/cellranger_featurebarcodes
+  output_dir: ./output/p26532_o28268/p26532_o28268-10x_rnaseq-pll-tme-hq
+  ncores: 6
+---
+
+## Load libraries, additional functions and data
+
+Setup environment
+```{r setup, include=TRUE, warning=FALSE, message=FALSE}
+knitr::opts_chunk$set(results='asis', echo=TRUE, message=FALSE, warning=FALSE, error=FALSE, fig.align = 'center', fig.width = 3.5, fig.asp = 0.618, dpi = 600, dev = c("png", "pdf"), fig.showtext = FALSE)
+
+options(stringsAsFactors = FALSE)
+
+use_seed <- 1100101
+set.seed(use_seed)
+
+if(!dir.exists(params$output_dir))
+  dir.create(params$output_dir, recursive = TRUE, showWarnings = FALSE)
+```
+
+Load packages
+```{r load-libraries}
+library(tidyverse)
+library(showtext)
+library(foreach)
+library(DT)
+library(knitr)
+library(kableExtra)
+library(cowplot)
+library(colorblindr)
+library(ggbeeswarm)
+library(arsenal)
+library(RColorBrewer)
+library(ggpubr)
+library(pheatmap)
+library(patchwork)
+library(openxlsx)
+library(magrittr)
+
+library(scater)
+library(DropletUtils)
+library(Seurat)
+library(scran)
+library(BiocSingular)
+library(batchelor)
+library(bluster)
+library(celldex)
+library(SingleR)
+library(scDblFinder)
+library(speckle)
+library(miloR)
+library(ComplexHeatmap)
+library(clusterProfiler)
+library(GSVA)
+library(circlize)
+```
+
+Set font family for figures
+```{r set-font, eval = FALSE}
+font_add("Helvetica", "./configuration/fonts/Helvetica.ttc")
+showtext_auto()
+```
+
+Load ggplot theme
+```{r ggplot-theme}
+source("./configuration/rmarkdown/ggplot_theme.R")
+source("./configuration/rmarkdown/color_palettes.R")
+```
+
+Load utils functions
+```{r load-util-functions}
+source('./code/R-functions/heatmap_scale.R')
+```
+
+Clean files generated in previous runs
+```{r clean-files}
+rmd_file <- current_input()
+if(!is.null(rmd_file)) {
+  figures_dir <- file.path('./docs/figure',rmd_file)
+  if(dir.exists(figures_dir)) {
+    unlink(file.path(figures_dir, "*"))
+  }
+}
+
+```
+
+## Data processing
+### Load SCE after integration
+Here we load SCE object after integration and record TME samples that were clustered together with Cancer Cells.
+```{r load-sce-int, eval = FALSE}
+sce_int <- readRDS(file.path(params$cellranger_count_dir, 'sce_integrated.rds'))
+sr_tabmuris <- readRDS(file.path('./output/p26532_o28268/p26532_o28268-10x_rnaseq', 'SingleR_tabmuris_annotation-integrated.rds'))
+
+sr_tabmuris$pred_cluster_simplified %<>%
+  dplyr::rename(
+    celltype_tabmuris_cluster_labels = celltype_cluster_labels,
+    celltype_tabmuris_cluster_pruned.labels = celltype_cluster_pruned.labels
+  )
+colData(sce_int) <- colData(sce_int) %>% data.frame %>%
+  mutate(cluster_mnn = as.character(cluster_mnn)) %>%
+  left_join(sr_tabmuris$pred_cluster_simplified) %>%
+  mutate(cluster_mnn = factor(cluster_mnn)) %>%
+  DataFrame
+
+tme_cancer_samples <- colData(sce_int) %>% data.frame %>% 
+  filter(cell_type == 'tumor_microenvironment' & (
+             celltype_tabmuris_cluster_pruned.labels == 'basal cell' |
+             celltype_tabmuris_cluster_pruned.labels == 'luminal epithelial cell of mammary gland' 
+             )
+         ) %>% 
+  mutate(sample_bc = paste(Sample, Barcode, sep = '_')) %>% 
+  pull(sample_bc)
+
+rm(sce_int)
+```
+
+### Batch integration
+Here we prepare the data for batch correction (next section). First, we combine cells from all SCE objects into a single SCE and return pre-computed per-gene variance at batch level. Then we adjust for batch level library size. Returned object will contain log-normalized expression values after adjusting the size factors for systematic differences in coverage between
+
+Before integration, we also remove: 
+
+  - TME cells clustered with cancer cells in the integrative analysis
+
+  - Cells from organs not used for this analysis : bone, brain and ovary
+
+  - Batch number 3 (03_22_04_25_BM_c_BM_m_Brain_c_Ovary_c): Only contains 350 cells (Bone only)
+
+```{r combine-sce, eval = FALSE}
+# File paths to SCE files
+sce_files <- system(paste("find", params$cellranger_count_dir, "-maxdepth 2 -type f -regex '.*/sce_normalized[.]rds$'"), intern = TRUE) %>% sort
+
+# Define list of anatomical sites to keep
+keep_sites <- c('liver', 'primary_tumor', 'lung')
+# Define samples/batches to remove due to low number of cells
+remove_samples <- '03_22_04_25_BM_c_BM_m_Brain_c_Ovary_c'
+
+# Combine all SCE files into sce_comb and generate an combine gene  with pre-computed gene variance 
+if(exists('sce_comb')) 
+  rm(sce_comb)
+sce_file <-  sce_files[7]
+precomputed_geneVar <- foreach(sce_file = sce_files) %do% {
+  use_sce <- readRDS(sce_file)
+  # Select TME cells
+  use_sce <- use_sce[,use_sce$cell_type == 'tumor_microenvironment']
+  # Remove TME cells clustered with cancer cells
+  use_sce$sample_bc <- paste(use_sce$Sample, use_sce$Barcode, sep = '_')
+  use_sce <- use_sce[,!use_sce$sample_bc %in% tme_cancer_samples]
+  # Remove cells from anatomical sites not selected
+  use_sce <- use_sce[,use_sce$site %in% keep_sites]
+  # Exclude Batch 03 : 03_22_04_25_BM_c_BM_m_Brain_c_Ovary_c
+  use_sce <- use_sce[,use_sce$Sample != remove_samples]
+   
+  use_sce$cluster_id_batch <- as.character(use_sce$cluster_id_batch)
+  if(ncol(use_sce) == 0) {
+    NULL
+  } else {
+    # Combine sce
+    if(!exists('sce_comb')) {
+      sce_comb <- use_sce
+    } else {
+      new_counts <- cbind(counts(sce_comb), counts(use_sce))
+      new_logcounts <- cbind(logcounts(sce_comb), logcounts(use_sce))
+      new_colData <- rbind(colData(sce_comb), colData(use_sce))
+      sce_comb <- SingleCellExperiment(
+        assays = list(counts = new_counts, logcounts = new_logcounts),
+        colData = new_colData,
+        rowData = rowData(sce_comb)
+      )
+    }
+    metadata(use_sce)$dec
+  }
+}
+metadata(sce_comb)$precomputed_geneVar <- compact(precomputed_geneVar)
+rm(use_sce)
+
+# Modify coldata and rownames
+sce_comb$batch <-  gsub("_.*", "", sce_comb$Sample)
+sce_comb$cluster_id_batch <-  paste(sce_comb$batch, sce_comb$cluster_id_batch, sep = '_') %>% as.factor()
+
+rownames(sce_comb) <- make.names(rowData(sce_comb)$gene_name, unique = TRUE)
+
+# Rescale each batch to adjust for differences in sequencing depth between batches. The multiBatchNorm() function recomputes log-normalized expression values after adjusting the size factors for systematic differences in coverage between SingleCellExperiment objects. (Size factors only remove biases between cells within a single batch.) This improves the quality of the correction by removing one aspect of the technical differences between batches.
+sce_comb <- multiBatchNorm(sce_comb, batch = sce_comb$Sample, BPPARAM=BiocParallel::MulticoreParam(params$ncores, RNGseed=use_seed))
+
+# Identifying a set of HVGs using stats from all batches.
+combined_dec <- combineVar(metadata(sce_comb)$precomputed_geneVar)
+# combined_hvg <- getTopHVGs(combined_dec, n=5000, row.names = FALSE)
+chosen_hvgs <- combined_dec$bio > 0 & !rowData(sce_comb)$is.mito & !rowData(sce_comb)$is.ribo
+
+# Dimensionality reduction
+sce_comb <- runPCA(sce_comb, subset_row=chosen_hvgs, BSPARAM=BiocSingular::RandomParam(), BPPARAM=BiocParallel::MulticoreParam(params$ncores, RNGseed=use_seed))
+sce_comb$cluster_id  <- clusterCells(sce_comb, use.dimred="PCA", BLUSPARAM=SNNGraphParam(k=25, type="rank", cluster.fun="louvain", BPPARAM=BiocParallel::MulticoreParam(params$ncores, RNGseed=use_seed)))
+tab <- table(Cluster=sce_comb$cluster_id, Batch=sce_comb$Sample)
+sce_comb <- runTSNE(sce_comb, dimred="PCA", BPPARAM=BiocParallel::MulticoreParam(params$ncores, RNGseed=use_seed))
+sce_comb <- runUMAP(sce_comb, dimred="PCA", BPPARAM=BiocParallel::MulticoreParam(params$ncores, RNGseed=use_seed))
+
+saveRDS(sce_comb, file.path(params$output_dir, 'sce_integrated-tme.rds'))
+```
+
+### Additional doublet detection
+[scDblFinder](https://github.com/plger/scDblFinder) : We suggest using the cluster-based approach when the datasets are segregated into clear clusters, and the random one for the rest (e.g. developmental trajectories).
+```{r scDblFinder, eval = FALSE}
+sce_comb <- scDblFinder(
+  sce_comb, 
+  samples =sce_comb$Sample, 
+  BPPARAM=BiocParallel::MulticoreParam(params$ncores/2, RNGseed=use_seed))
+
+saveRDS(sce_comb, file.path(params$output_dir, 'sce_integrated-tme.rds'))
+```
+
+### Batch correction using MNN
+Here, we actually perform the correction itself. We also perform the clustering.
+```{r batch-correction-keep-dpublets, eval = FALSE}
+if(!exists('sce_comb'))
+  sce_comb <- readRDS(file.path(params$output_dir, 'sce_integrated-tme.rds'))
+
+# Identifying a set of HVGs using stats from all batches.
+combined_dec <- combineVar(metadata(sce_comb)$precomputed_geneVar)
+# combined_hvg <- getTopHVGs(combined_dec, n=2000, row.names = FALSE)
+chosen_hvgs <- combined_dec$bio > 0 & !rowData(sce_comb)$is.mito & !rowData(sce_comb)$is.ribo
+
+# MNN correction
+sce_mnn <- fastMNN(sce_comb,
+                   batch = sce_comb$Sample, 
+                   auto.merge = TRUE, 
+                      subset.row=chosen_hvgs, 
+                      BSPARAM=RandomParam(deferred=TRUE), 
+                      BPPARAM=BiocParallel::MulticoreParam(params$ncores, RNGseed=use_seed),
+                      d=50, k=20)
+# colData(sce_mnn) <- colData(sce_comb)
+rowData(sce_mnn) <-  rowData(sce_comb)[chosen_hvgs,]
+
+# Dimensionality reduction
+sce_mnn <- runTSNE(sce_mnn, dimred="corrected", BPPARAM=BiocParallel::MulticoreParam(params$ncores, RNGseed=use_seed))
+sce_mnn <- runUMAP(sce_mnn, dimred="corrected", BPPARAM=BiocParallel::MulticoreParam(params$ncores, RNGseed=use_seed))
+
+# Clustering using corrected values
+sce_mnn$cluster_mnn  <- clusterCells(sce_mnn, use.dimred="corrected", BLUSPARAM=SNNGraphParam(k=25, type="rank", cluster.fun="louvain", BPPARAM=BiocParallel::MulticoreParam(params$ncores, RNGseed=use_seed)))
+
+# Add corrected info to sce_comb
+sce_comb$cluster_mnn <- sce_mnn$cluster_mnn
+reducedDim(sce_comb, 'corrected') <- reducedDim(sce_mnn, 'corrected')
+reducedDim(sce_comb, 'TSNE_corrected') <- reducedDim(sce_mnn, 'TSNE')
+reducedDim(sce_comb, 'UMAP_corrected') <- reducedDim(sce_mnn, 'UMAP')
+# plotUMAP(sce_mnn, color_by = 'cluster_mnn')
+
+# MNN-related diagnostic examining the variance in the differences in expression between MNN pairs.
+use_sce <- sce_comb
+rownames(use_sce) <- make.names(rowData(use_sce)$gene_name, unique = TRUE)
+metadata(sce_mnn)$mnnDeltaVariance <- mnnDeltaVariance(
+  use_sce,
+  pairs=metadata(sce_mnn)$merge.info$pairs, 
+  BPPARAM=BiocParallel::MulticoreParam(params$ncores, RNGseed=use_seed)
+  )
+rm(use_sce)
+
+# Add cell by type to plot 
+if(!exists('ref_mouse_imm'))
+  ref_mouse_imm <- celldex::ImmGenData()
+
+pred_cluster <- SingleR(test=sce_comb, 
+                ref=ref_mouse_imm, 
+                labels=ref_mouse_imm$label.main, 
+                clusters = sce_mnn$cluster_mnn,
+                de.method="classic",
+                BPPARAM=BiocParallel::MulticoreParam(params$ncores, RNGseed=use_seed))
+
+pred_cluster_simplified <- pred_cluster %>% 
+  data.frame %>% 
+  dplyr::select(labels,pruned.labels) %>% 
+  dplyr::rename(celltype_cluster_labels = labels, celltype_cluster_pruned.labels = pruned.labels) %>% 
+  rownames_to_column('cluster_mnn')
+
+colData(sce_comb) <- colData(sce_comb) %>% data.frame %>%
+  mutate(cluster_mnn = as.character(cluster_mnn)) %>%
+  left_join(pred_cluster_simplified) %>%
+  mutate(cluster_mnn = factor(cluster_mnn)) %>%
+  DataFrame
+
+colData(sce_mnn) <- colData(sce_mnn) %>% data.frame %>%
+  mutate(cluster_mnn = as.character(cluster_mnn)) %>%
+  left_join(pred_cluster_simplified) %>%
+  mutate(cluster_mnn = factor(cluster_mnn)) %>%
+  DataFrame
+
+# Save SCE objects
+saveRDS(sce_mnn, file.path(params$output_dir, 'sce_integrated_corrected-keep_doublets-tme.rds'))
+saveRDS(sce_comb, file.path(params$output_dir, 'sce_integrated-tme.rds'))
+```
+
+### Remove clusters
+Here we remove 
+- Clusters with a high proportion of doublets as detected in the [Additional doublet detection]
+- Clusters with high proportion of mitochondrial reads AND low library size
+```{r doublets-removal, eval = FALSE}
+if(!exists('sce_comb'))
+  sce_comb <- readRDS(file.path(params$output_dir, 'sce_integrated-tme.rds'))
+
+# keep a version with doublets for QC visualization
+saveRDS(sce_comb, file.path(params$output_dir, 'sce_integrated-keep_doublets-tme.rds'))
+
+# plotReducedDim(sce_comb, dimred = 'UMAP_corrected', color_by = 'scDblFinder.score')
+# plotReducedDim(sce_comb, dimred = 'UMAP_corrected', color_by = 'scDblFinder.class')
+
+# Clusters to remove by doublet detection
+cl_to_remove_dbl <- table(sce_comb$cluster_mnn, sce_comb$scDblFinder.class) %>% 
+  prop.table(1) %>% data.frame %>% set_names(c('Cluster', 'Class', 'Proportion')) %>% 
+  filter(Class == 'doublet' & Proportion > 0.25) %>% 
+  pull(Cluster) %>% as.character
+
+# Clusters to remove by mito pct and library size
+cl_to_remove_q <- colData(sce_comb) %>% data.frame %>% 
+  group_by(cluster_mnn) %>% 
+  summarise(
+    m_mito_pct = median(subsets_Mito_percent),
+    m_sum = median(sum)
+    ) %>% 
+  filter(m_mito_pct > 15 & m_sum < 3000) %>% 
+  pull(cluster_mnn) %>% as.character
+
+# Save SCE without doublets clusters
+cl_to_remove <- c(cl_to_remove_dbl, cl_to_remove_q)
+sce_comb <- sce_comb[,!sce_comb$cluster_mnn %in% cl_to_remove]
+sce_comb$cluster_mnn_doublets <- droplevels(sce_comb$cluster_mnn)
+saveRDS(sce_comb, file.path(params$output_dir, 'sce_integrated-tme.rds'))
+```
+
+### Batch correction after doublet removal using MNN
+Here, we actually perform the correction itself. We also perform the clustering.
+```{r batch-correction, eval = FALSE}
+if(!exists('sce_comb'))
+  sce_comb <- readRDS(file.path(params$output_dir, 'sce_integrated-tme.rds'))
+
+# Identifying a set of HVGs using stats from all batches.
+combined_dec <- combineVar(metadata(sce_comb)$precomputed_geneVar)
+# combined_hvg <- getTopHVGs(combined_dec, n=2000, row.names = FALSE)
+chosen_hvgs <- combined_dec$bio > 0 & !rowData(sce_comb)$is.mito & !rowData(sce_comb)$is.ribo
+
+# MNN correction
+sce_mnn <- fastMNN(sce_comb,
+                   batch = sce_comb$Sample, 
+                   auto.merge = TRUE, 
+                      subset.row=chosen_hvgs, 
+                      BSPARAM=RandomParam(deferred=TRUE), 
+                      BPPARAM=BiocParallel::MulticoreParam(params$ncores, RNGseed=use_seed),
+                      d=50, k=20)
+# colData(sce_mnn) <- colData(sce_comb)
+rowData(sce_mnn) <-  rowData(sce_comb)[chosen_hvgs,]
+
+# Dimensionality reduction
+sce_mnn <- runTSNE(sce_mnn, dimred="corrected", BPPARAM=BiocParallel::MulticoreParam(params$ncores, RNGseed=use_seed))
+sce_mnn <- runUMAP(sce_mnn, dimred="corrected", BPPARAM=BiocParallel::MulticoreParam(params$ncores, RNGseed=use_seed))
+
+# Clustering using corrected values
+sce_mnn$cluster_mnn  <- clusterCells(sce_mnn, use.dimred="corrected", BLUSPARAM=SNNGraphParam(k=25, type="rank", cluster.fun="louvain", BPPARAM=BiocParallel::MulticoreParam(params$ncores, RNGseed=use_seed)))
+
+# Add corrected info to sce_comb
+sce_comb$cluster_mnn <- sce_mnn$cluster_mnn
+reducedDim(sce_comb, 'corrected') <- reducedDim(sce_mnn, 'corrected')
+reducedDim(sce_comb, 'TSNE_corrected') <- reducedDim(sce_mnn, 'TSNE')
+reducedDim(sce_comb, 'UMAP_corrected') <- reducedDim(sce_mnn, 'UMAP')
+# plotUMAP(sce_mnn, color_by = 'cluster_mnn')
+
+# MNN-related diagnostic examining the variance in the differences in expression between MNN pairs.
+use_sce <- sce_comb
+rownames(use_sce) <- make.names(rowData(use_sce)$gene_name, unique = TRUE)
+metadata(sce_mnn)$mnnDeltaVariance <- mnnDeltaVariance(
+  use_sce,
+  pairs=metadata(sce_mnn)$merge.info$pairs, 
+  BPPARAM=BiocParallel::MulticoreParam(params$ncores, RNGseed=use_seed)
+  )
+rm(use_sce)
+
+# Save SCE objects
+saveRDS(sce_mnn, file.path(params$output_dir, 'sce_integrated_corrected-tme.rds'))
+saveRDS(sce_comb, file.path(params$output_dir, 'sce_integrated-tme.rds'))
+```
+
+### Annotate cell type
+#### GSVA
+https://www.ncbi.nlm.nih.gov/pmc/articles/PMC6720041/
+```{r cell-type-annotation-gsva, eval = FALSE}
+if(!exists('sce_comb'))
+  sce_comb <- readRDS(file.path(params$cellranger_count_dir, 'sce_integrated-tme.rds'))
+
+# Load gene-sets datasets
+msigdb_m8_gmt <- read.gmt("./data/resources/MSigDB/v2022.1.Mm/m8.all.v2022.1.Mm.symbols.gmt")
+msigdb_go_bp_gmt <- read.gmt("./data/resources/MSigDB/v2022.1.Mm/m5.go.bp.v2022.1.Mm.symbols.gmt")
+msigdb_m2_cp_gmt <- read.gmt("./data/resources/MSigDB/v2022.1.Mm/m2.cp.v2022.1.Mm.symbols.gmt")
+msigdb_m8 <- foreach(iterm = levels(msigdb_m8_gmt$term)) %do% {
+  msigdb_m8_gmt %>% filter(term == iterm) %>% pull(gene)
+}
+msigdb_go_bp <- foreach(iterm = levels(msigdb_go_bp_gmt$term)) %do% {
+  msigdb_go_bp_gmt %>% filter(term == iterm) %>% pull(gene)
+}
+msigdb_m2 <- foreach(iterm = levels(msigdb_m2_cp_gmt$term)) %do% {
+  msigdb_m2_cp_gmt %>% filter(term == iterm) %>% pull(gene)
+}
+
+
+gsva_res_m8 <- gsva(logcounts(sce_comb), 
+                   method = 'ssgsea',
+                   gset.idx.list = msigdb_m8, 
+                   min.sz = 5, 
+                   max.sz = 700, 
+                   verbose = FALSE,
+                   BPPARAM = BiocParallel::MulticoreParam(params$ncores, RNGseed=use_seed)
+                   )
+
+gsva_res_gobp <- gsva(logcounts(sce_comb), 
+                   method = 'ssgsea',
+                   gset.idx.list = msigdb_go_bp, 
+                   min.sz = 5, 
+                   max.sz = 700, 
+                   verbose = FALSE,
+                   BPPARAM = BiocParallel::MulticoreParam(params$ncores, RNGseed=use_seed)
+                   )
+
+gsva_res_m2 <- gsva(logcounts(sce_comb), 
+                   method = 'ssgsea',
+                   gset.idx.list = msigdb_m2, 
+                   min.sz = 5, 
+                   max.sz = 700, 
+                   verbose = FALSE,
+                   BPPARAM = BiocParallel::MulticoreParam(params$ncores, RNGseed=use_seed)
+                   )
+```
+
+#### Single R MouseRNAseqData
+We are using the MouseRNAseqData from celldex. I tried using the MouseRNAseqData together with the ImmGenData, ust most of the cells were assigned better to MouseRNAseqData and the label duplicate between both datasets can lead to a reduction of the delta score for some cells, pruning correct labels due to the low delta score. 
+```{r cell-type-annotation-single-R-MouseRNAseqData, eval = FALSE}
+if(!exists('sce_comb'))
+  sce_comb <- readRDS(file.path(params$cellranger_count_dir, 'sce_integrated-tme.rds'))
+
+ref_mouse_general <- celldex::MouseRNAseqData()
+
+# SingleR::The default settings of this function are based on the assumption that ref contains or bulk data. If it contains single-cell data, this usually requires a different de.method choice. Read the Note in ?trainSingleR for more details.
+
+# Run SingleR at cell level with main label
+pred <- SingleR(test=sce_comb, 
+                ref=ref_mouse_general, 
+                labels=ref_mouse_general$label.main, 
+                de.method="wilcox",
+                BPPARAM=BiocParallel::MulticoreParam(params$ncores, RNGseed=use_seed))
+
+# Run SingleR at cluster level with main label
+pred_cluster <- SingleR(test=sce_comb, 
+                        clusters=sce_comb$cluster_mnn, 
+                        ref=ref_mouse_general, 
+                        labels=ref_mouse_general$label.main, 
+                        BPPARAM=BiocParallel::MulticoreParam(params$ncores, RNGseed=use_seed))
+
+pred_cluster_simplified <- pred_cluster %>% 
+  data.frame %>% 
+  dplyr::select(labels,pruned.labels) %>% 
+  dplyr::rename(celltype_cluster_labels = labels, celltype_cluster_pruned.labels = pruned.labels) %>% 
+  rownames_to_column('cluster_mnn')
+
+# Run SingleR at cluster level for each sample, with main label
+pred_cluster_batch <- SingleR(test=sce_comb, 
+                              clusters=sce_comb$cluster_id_batch, 
+                              ref=ref_mouse_general, 
+                              labels=ref_mouse_general$label.main,
+                              BPPARAM=BiocParallel::MulticoreParam(params$ncores, RNGseed=use_seed))
+
+pred_cluster_batch_simplified <- pred_cluster_batch %>%  
+  data.frame %>% 
+  dplyr::select(labels,pruned.labels) %>% 
+  dplyr::rename( celltype_cluster_batch_labels = labels,  celltype_cluster_batch_pruned.labels = pruned.labels) %>% 
+  rownames_to_column('cluster_id_batch')
+
+# Save results
+res <- list(
+  pred = pred,
+  pred_cluster = pred_cluster,
+  pred_cluster_simplified = pred_cluster_simplified,
+  pred_cluster_batch = pred_cluster_batch,
+  pred_cluster_batch_simplified = pred_cluster_batch_simplified
+)
+saveRDS(res, file.path(params$output_dir, 'SingleR_MouseRNAseqData_annotation-tme.rds'))
+rm(res)
+```
+
+
+#### SingleR - Tabula muris
+Annotation using [mouse tabula muris](https://figshare.com/articles/dataset/Robject_files_for_tissues_processed_by_Seurat/5821263), selecting organs used in this analysis. See more details about the data [here](https://figshare.com/articles/dataset/Robject_files_for_tissues_processed_by_Seurat/5821263) and [here](https://tabula-muris.ds.czbiohub.org/).
+
+First we generate SCE object from tabula muris seurat objects
+```{r cell-type-annotation-single-R-tabmuris-generate-ref, eval = FALSE}
+if(file.exists('./data/tabula_muris/sce.rds')) {
+  sce_tmuris <- readRDS('./data/tabula_muris/sce.rds')
+} else {
+  list_tabmuris_files <- list.files(path = './data/tabula_muris', pattern = '[droplet|facs].*Robj', full.names = TRUE)
+  list_tabmuris_files <- grep('brain|ovary', list_tabmuris_files, value = TRUE, ignore.case = TRUE, invert = TRUE)
+  if(exists('sce_tmuris')) 
+    rm(sce_tmuris)
+  i <- list_tabmuris_files[[1]]
+  for(i in list_tabmuris_files) {
+    print(i)
+    load(i)
+    tiss.up <- UpdateSeuratObject(tiss)
+    rm(tiss)
+    tiss.sce <- as.SingleCellExperiment(tiss.up)
+    rm(tiss.up)
+    saveRDS(tiss.sce, gsub(".Robj", ".sce.rds", i))
+    if(!exists('sce_tmuris')) {
+      sce_tmuris <- tiss.sce
+    } else {
+      shared_rows <- intersect(rownames(sce_tmuris), rownames(tiss.sce))
+      shared_coldata <- intersect(colnames(colData(sce_tmuris)), colnames(colData(tiss.sce)))
+      colData(sce_tmuris) <- colData(sce_tmuris)[,shared_coldata]
+      colData(tiss.sce) <- colData(tiss.sce)[,shared_coldata]
+      sce_tmuris <- cbind(sce_tmuris[shared_rows,], tiss.sce[shared_rows,])
+    }
+    rm(tiss.sce)
+  }
+  saveRDS(sce_tmuris, './data/tabula_muris/sce.rds')
+}
+```
+
+```{r cell-type-annotation-single-R-tabmuris, eval = FALSE}
+if(!exists('sce_comb'))
+  sce_comb <- readRDS(file.path(params$output_dir, 'sce_integrated-tme.rds'))
+if(!exists('sce_tmuris'))
+  sce_tmuris <- readRDS('./data/tabula_muris/sce.rds')
+
+# Run SingleR at cell level with main label
+pred <- SingleR(
+  test=sce_comb,
+  ref=sce_tmuris,
+  labels=sce_tmuris$cell_ontology_class,
+  de.method="wilcox",
+  aggr.ref = TRUE,
+  BPPARAM=BiocParallel::MulticoreParam(params$ncores, RNGseed=use_seed)
+  )
+
+# Run SingleR at cluster level with main label
+# pred_tabmuris_cluster <- SingleR(
+#   test=sce_comb,
+#   ref=sce_tmuris,
+#   labels=sce_tmuris$cell_ontology_class,
+#   clusters=sce_comb$cluster_mnn,
+#   de.method="wilcox",
+#   aggr.ref = TRUE,
+#   BPPARAM=BiocParallel::MulticoreParam(params$ncores, RNGseed=use_seed)
+# ) 
+# 
+# pred_tabmuris_cluster_simplified <- pred_tabmuris_cluster %>% 
+#   data.frame %>% 
+#   dplyr::select(labels,pruned.labels) %>% 
+#   dplyr::rename(celltype_tabmuris_cluster_labels = labels, celltype_tabmuris_cluster_pruned.labels = pruned.labels) %>% 
+#   rownames_to_column('cluster_mnn')
+
+# Run SingleR at cluster level with main label
+# pred_tabmuris_cluster_batch <- SingleR(
+#   test=sce_comb,
+#   ref=sce_tmuris,
+#   labels=sce_tmuris$cell_ontology_class,
+#   clusters=sce_comb$cluster_id_batch,
+#   de.method="wilcox",
+#   aggr.ref = TRUE,
+#   BPPARAM=BiocParallel::MulticoreParam(params$ncores, RNGseed=use_seed)
+# ) 
+# 
+# pred_tabmuris_cluster_batch_simplified <- pred_tabmuris_cluster_batch %>%  
+#   data.frame %>% 
+#   dplyr::select(labels:pruned.labels) %>% 
+#   dplyr::rename( celltype_tabmuris_cluster_batch_labels = labels,  celltype_tabmuris_cluster_batch_pruned.labels = pruned.labels) %>% 
+#   rownames_to_column('cluster_id_batch')
+
+
+# Save results
+res <- list(
+  pred = pred
+  # pred_cluster = pred_tabmuris_cluster,
+  # pred_cluster_simplified = pred_tabmuris_cluster_simplified,
+  # pred_cluster_batch = pred_tabmuris_cluster_batch,
+  # pred_cluster_batch_simplified = pred_tabmuris_cluster_batch_simplified
+)
+saveRDS(res, file.path(params$output_dir, 'SingleR_tabmuris_annotation-tme.rds'))
+rm(res)
+```
+
+#### Single R ImmGenData
+We are using the ImmGenData from celldex: normalized expression values of 830 microarray samples of pure mouse immune cells, generated by the [Immunologic Genome Project (ImmGen)](https://www.immgen.org/). This is currently the most highly resolved immune reference - possibly overwhelmingly so, given the granularity of the fine labels.
+
+```{r cell-type-annotation-single-R-ImmGenData, eval = FALSE}
+if(!exists('sce_comb'))
+  sce_comb <- readRDS(file.path(params$cellranger_count_dir, 'sce_integrated-tme.rds'))
+if(!exists('ref_mouse_imm'))
+  ref_mouse_imm <- celldex::ImmGenData()
+
+# SingleR::The default settings of this function are based on the assumption that ref contains or bulk data. If it contains single-cell data, this usually requires a different de.method choice. Read the Note in ?trainSingleR for more details.
+
+# Run SingleR at cell level with main label
+pred <- SingleR(test=sce_comb, 
+                ref=ref_mouse_imm, 
+                labels=ref_mouse_imm$label.main, 
+                de.method="classic",
+                BPPARAM=BiocParallel::MulticoreParam(params$ncores, RNGseed=use_seed))
+  
+# Run SingleR at cell level with main label
+pred_fine <- SingleR(test=sce_comb, 
+                ref=ref_mouse_imm, 
+                labels=ref_mouse_imm$label.fine, 
+                de.method="classic",
+                BPPARAM=BiocParallel::MulticoreParam(params$ncores, RNGseed=use_seed))
+
+
+# Run SingleR at cluster level with main label
+pred_cluster <- SingleR(test=sce_comb, 
+                        clusters=sce_comb$cluster_mnn, 
+                        ref=ref_mouse_imm, 
+                        labels=ref_mouse_imm$label.main, 
+                        BPPARAM=BiocParallel::MulticoreParam(params$ncores, RNGseed=use_seed))
+
+pred_cluster_simplified <- pred_cluster %>% 
+  data.frame %>% 
+  dplyr::select(labels,pruned.labels) %>% 
+  dplyr::rename(celltype_cluster_labels = labels, celltype_cluster_pruned.labels = pruned.labels) %>% 
+  rownames_to_column('cluster_mnn')
+
+# Save results
+res <- list(
+  pred = pred,
+  pred_fine = pred_fine,
+  pred_cluster = pred_cluster,
+  pred_cluster_simplified = pred_cluster_simplified
+)
+saveRDS(res, file.path(params$output_dir, 'SingleR_ImmGenData_annotation-tme.rds'))
+rm(res)
+```
+
+### Markers detection
+
+We identify the genes that drive separation between clusters and cell types. These marker genes allow us to assign biological meaning to each cluster based on their functional annotation. We added batch as a blocking factor to the model. The block argument works for all effect sizes shown above and is robust to differences in the log-fold changes or variance between batches. However, it assumes that each pair of clusters is present in at least one batch. In scenarios where cells from two clusters never co-occur in the same batch, the associated pairwise comparison will be impossible and is ignored during calculation of summary statistics.
+
+```{r score-marker-genes, eval = FALSE}
+marker_info <- list()
+
+if(!exists('sce_comb'))
+  sce_comb <- readRDS(file.path(params$output_dir, 'sce_integrated-tme.rds'))
+if(!exists('sr_immgen'))
+  sr_immgen <- readRDS(file.path(params$output_dir, 'SingleR_ImmGenData_annotation-tme.rds'))
+
+sce_comb$celltype_immgen_pruned.labels <- sr_immgen$pred$pruned.labels
+sce_comb$celltype_immgen.labels <- sr_immgen$pred$labels
+sce_comb$celltype_immgen_pruned.labels.fine <- sr_immgen$pred_fine$pruned.labels
+sce_comb$celltype_immgen.labels.fine <- sr_immgen$pred_fine$labels
+
+# Cluster markers
+marker_info$cluster_markers <- scoreMarkers(
+  sce_comb, 
+  groups = sce_comb$cluster_mnn, 
+  block = sce_comb$batch,
+  lfc=1, 
+  full.stats=TRUE,
+  row.data=rowData(sce_comb)[,c('gene_name', 'is.mito', 'is.ribo'),drop=FALSE], 
+  BPPARAM=BiocParallel::MulticoreParam(params$ncores, RNGseed=use_seed)
+)
+
+# Cell type markers for ImmGen
+marker_info$celltype_markers <- scoreMarkers(
+  sce_comb, 
+  groups = sce_comb$celltype_immgen_pruned.labels, 
+  block = sce_comb$batch,
+  lfc=1, 
+  full.stats=TRUE,
+  row.data=rowData(sce_comb)[,c('gene_name', 'is.mito', 'is.ribo'),drop=FALSE], 
+  BPPARAM=BiocParallel::MulticoreParam(params$ncores, RNGseed=use_seed)
+)
+
+
+# Site markers for each cell type from ImmGen
+ct_label <- 'celltype_immgen_pruned.labels'
+## Remove low abundant cell types 
+keep_labels <- table(colData(sce_comb)[[ct_label]]) %>% data.frame %>% filter(Freq >= 100) %>% pull(Var1)
+## Iterate by cell type
+use_label <- keep_labels[6]
+marker_info$site_celltype_markers <- foreach(use_label = keep_labels) %do% {
+  use_cols <- colData(sce_comb)[[ct_label]] %in%  use_label
+  use_sce <- sce_comb[,use_cols]
+  scoreMarkers(
+    use_sce, 
+    groups = use_sce$site, 
+    block = use_sce$batch,
+    lfc=0.5, 
+    full.stats=TRUE,
+    row.data=rowData(sce_comb)[,c('gene_name', 'is.mito', 'is.ribo'),drop=FALSE], 
+    BPPARAM=BiocParallel::MulticoreParam(params$ncores, RNGseed=use_seed)
+    )
+}
+names(marker_info$site_celltype_markers) <- keep_labels
+
+# Lung-liver markers for each cell type from ImmGen
+ct_label <- 'celltype_immgen_pruned.labels'
+## Keep only lung and liver
+use_sce <- sce_comb[,sce_comb$site %in% c('liver', 'lung')]
+## Remove low abundant cell types 
+keep_labels <- table(colData(use_sce)[[ct_label]]) %>% data.frame %>% filter(Freq >= 100) %>% pull(Var1)
+## Iterate by cell type
+use_label <- keep_labels[6]
+marker_info$lung_liver_celltype_markers <- foreach(use_label = keep_labels) %do% {
+  use_cols <- colData(use_sce)[[ct_label]] %in%  use_label
+  use_sce_i <- use_sce[,use_cols]
+  scoreMarkers(
+    use_sce_i, 
+    groups = use_sce_i$site, 
+    block = use_sce_i$batch,
+    lfc=0.5, 
+    full.stats=TRUE,
+    row.data=rowData(use_sce_i)[,c('gene_name', 'is.mito', 'is.ribo'),drop=FALSE], 
+    BPPARAM=BiocParallel::MulticoreParam(params$ncores, RNGseed=use_seed)
+    )
+}
+names(marker_info$lung_liver_celltype_markers) <- keep_labels
+rm(use_sce)
+rm(use_sce_i)
+
+saveRDS(marker_info, file.path(params$output_dir, 'scoreMarkers.rds'))
+
+```
+
+
+### Load data
+```{r load-data, eval = TRUE}
+sce_comb <- readRDS(file.path(params$output_dir, 'sce_integrated-tme.rds'))
+sce_mnn <- readRDS(file.path(params$output_dir, 'sce_integrated_corrected-tme.rds'))
+# sce_subcl <- readRDS(file.path(params$output_dir, 'subcluster1_iannot.rds'))
+# sce_subcl_scdbl <- readRDS(file.path(params$output_dir, 'subcluster1_iannot_scdbl.rds'))
+# sce_cc <- readRDS(file.path(params$cellranger_count_dir, 'sce_integrated-cancer_cell.rds'))
+score_markers <- readRDS(file.path(params$output_dir, 'scoreMarkers.rds'))
+# sr_tabmuris <- readRDS(file.path(params$output_dir, 'SingleR_tabmuris_annotation-tme.rds'))
+sr_mrnaseq <- readRDS(file.path(params$output_dir, 'SingleR_MouseRNAseqData_annotation-tme.rds'))
+sr_immgen <- readRDS(file.path(params$output_dir, 'SingleR_ImmGenData_annotation-tme.rds'))
+
+# Add cell type annotation
+sce_comb$celltype_mrnaseq_pruned.labels <- sr_mrnaseq$pred$pruned.labels
+sce_comb$celltype_mrnaseq.labels <- sr_mrnaseq$pred$labels
+# sce_comb$celltype_tabmuris_pruned.labels <- sr_tabmuris$pred$pruned.labels
+# sce_comb$celltype_tabmuris.labels <- sr_tabmuris$pred$labels
+sce_comb$celltype_immgen_pruned.labels <- sr_immgen$pred$pruned.labels
+sce_comb$celltype_immgen.labels <- sr_immgen$pred$labels
+sce_comb$celltype_immgen_pruned.labels.fine <- sr_immgen$pred_fine$pruned.labels
+sce_comb$celltype_immgen.labels.fine <- sr_immgen$pred_fine$labels
+
+# colData(sce_comb) <- colData(sce_comb) %>% data.frame %>%
+#   mutate(cluster_mnn = as.character(cluster_mnn)) %>%
+#   left_join(sr_tabmuris$pred_cluster_simplified) %>%
+#   mutate(cluster_mnn = factor(cluster_mnn)) %>%
+#   DataFrame
+# 
+# Add cluster level annotation using mrnaseq database
+sr_mrnaseq$pred_cluster_simplified %<>%
+  dplyr::rename(
+    celltype_mrnaseq_cluster_labels = celltype_cluster_labels,
+    celltype_mrnaseq_cluster_pruned.labels = celltype_cluster_pruned.labels
+  )
+colData(sce_comb) <- colData(sce_comb) %>% data.frame %>%
+  mutate(cluster_mnn = as.character(cluster_mnn)) %>%
+  left_join(sr_mrnaseq$pred_cluster_simplified) %>%
+  mutate(cluster_mnn = factor(cluster_mnn)) %>%
+  DataFrame
+
+# Add cluster level annotation using immgen database
+sr_immgen$pred_cluster_simplified %<>%
+  dplyr::rename(
+    celltype_immgen_cluster_labels = celltype_cluster_labels,
+    celltype_immgen_cluster_pruned.labels = celltype_cluster_pruned.labels
+  )
+colData(sce_comb) <- colData(sce_comb) %>% data.frame %>%
+  mutate(cluster_mnn = as.character(cluster_mnn)) %>%
+  left_join(sr_immgen$pred_cluster_simplified) %>%
+  mutate(cluster_mnn = factor(cluster_mnn)) %>%
+  DataFrame
+
+
+# Site levels order
+site_caps_ord <- c('Primary tumor', 'Liver', 'Lung')
+site_ord <- c('primary_tumor', 'liver', 'lung')
+
+
+# Add new colData vars
+colData(sce_comb) <- colData(sce_comb) %>% data.frame %>% 
+  mutate(
+    site_caps = ifelse(site == 'liver', 'Liver', site),
+    site_caps = ifelse(site == 'lung', 'Lung', site_caps),
+    site_caps = ifelse(site == 'primary_tumor', 'Primary tumor', site_caps),
+    site = factor(site, levels = site_ord),
+    site_caps = factor(site_caps, levels = site_caps_ord)
+  ) %>% 
+  DataFrame
+
+# Coordinate colData between sce_comb and sce_mnn
+colData(sce_mnn) <- colData(sce_comb)
+assay(sce_mnn, 'logcounts') <- logcounts(sce_comb[rownames(sce_mnn),])
+```
+
+
+
+
+
+## Data description
+
+### Site distribution per batch
+```{r batch-site-dist}
+table(sce_comb$Sample, sce_comb$site) %>% 
+  kbl(caption = 'Number of cells per batch and site.') %>%
+  kable_paper(bootstrap_options = c("striped", "hover", "condensed"), full_width = F)
+
+sites_selected <- sce_comb$site %>% table %>% data.frame %>% dplyr::rename(site = ".") %>% filter(Freq >= 500) %>% collect %>% .[['site']] %>% as.character
+```
+
+### DA sites selection
+For differential abundance analysis between sites, we are only using sites with more than 500 cells: `r sites_selected %>% paste(collapse = ', ')``
+```{r da-sites-selection}
+res_tab <- table(sce_comb$site) %>% 
+  data.frame %>% dplyr::rename(Site = Var1, `Total cells` = Freq) %>% 
+  mutate(Selected = `Total cells` >= 500) %>% 
+  arrange(desc(`Total cells`))
+
+res_tab %>% 
+  kbl(caption = 'Total number of cells per site.') %>%
+  kable_paper(bootstrap_options = c("striped", "hover", "condensed"), full_width = F)
+
+sites2comp <- res_tab$Site[res_tab$Selected]
+site_combn <- combn(sites2comp, 2, simplify = FALSE)
+```
+
+
+
+## UMAP final
+### Site
+Calculate compact coordinates preserving intracluster shape
+```{r final-figures-umap-compact}
+umap_dim <- reducedDim(sce_mnn, 'UMAP')
+dim_1 <- umap_dim[,1]
+dim_1[dim_1 > 6] <- dim_1[dim_1 > 6] - 5
+dim_1[dim_1 < -10] <- dim_1[dim_1 < -10] + 4
+dim_2 <- umap_dim[,2]
+dim_2[dim_2 > 6] <- dim_2[dim_2 > 6] - 7
+dim_2[dim_2 < -9] <- dim_2[dim_2 < -9] + 3
+umap_dim[,1] <- dim_1
+umap_dim[,2] <- dim_2
+reducedDim(sce_mnn, 'UMAP_compact') <- umap_dim
+options(ggrastr.default.dpi=300)
+```
+
+
+```{r final-figures-umap-compact-site-rasterised, fig.asp = 0.6}
+plotReducedDim(sce_mnn, dimred = 'UMAP_compact', colour_by="site_caps", point_alpha = 0.2, point_size = 0.005, rasterise = TRUE) +
+  scale_color_manual(values = site_palette) +
+  guides(colour = guide_legend(override.aes = list(alpha = 1, size = 3))) +
+  labs(
+    x = 'UMAP 1',
+    y = 'UMAP 2',
+    color = '',
+    title = paste0('UMAP of all TME cells (',scales::number(ncol(sce_mnn), big.mark = "'"),' cells)')
+  ) +
+  theme(
+    plot.title = element_text(size = 8, face = 'plain'),
+    axis.line = element_line(linewidth = rel(0.5)),
+    axis.text=element_blank(),
+    axis.ticks=element_blank()#,
+    # axis.line =element_blank()
+  )
+```
+
+
+### Cell type individual level
+Showing only cell types with >= 50 cells
+```{r final-figures-umap-compact-celltype-ind, fig.asp = 0.6, eval = TRUE}
+celltype_label <- 'celltype_immgen_pruned.labels'
+use_celltypes <-  colData(sce_mnn)[,celltype_label] %>% table %>% data.frame %>% filter(Freq >= 50) %>% collect %>% .[['.']] %>% as.character
+use_sce <- sce_mnn[,colData(sce_mnn)[,celltype_label] %in% use_celltypes]
+use_sce[[celltype_label]] <- factor(use_sce[[celltype_label]], levels = names(celltype_palette)[names(celltype_palette) %in% use_celltypes])
+
+plotReducedDim(sce_mnn, dimred = 'UMAP_compact', colour_by = celltype_label, point_alpha = 0.2, point_size = 0.05, rasterise = TRUE) + 
+  scale_color_manual(values = celltype_palette) +
+  guides(colour = guide_legend(override.aes = list(alpha = 1, size = 3))) +
+  labs(
+    x = 'UMAP 1',
+    y = 'UMAP 2',
+    color = '',
+    title = paste0('UMAP of selected TME cell types (',scales::number(ncol(use_sce), big.mark = "'"),' cells)')
+  ) +
+  theme(
+    plot.title = element_text(size = 8, face = 'plain'),
+    axis.line = element_line(linewidth = rel(0.5)),
+    axis.text=element_blank(),
+    axis.ticks=element_blank()#,
+    # axis.line =element_blank()
+  )
+```
+
+
+
+## Site differential abundance of cell types
+Differential abundance of cell types using individual cell annotations
+### Statistical analysis
+Differential abundance using `speckle::propeller` package
+```{r da_propeller_immgen}
+ct_label <- 'celltype_immgen_pruned.labels'
+use_data <- colData(sce_comb) %>% data.frame %>% 
+  mutate(
+    sample = paste(mouse_id, site, sep = '_')
+  )
+  #dplyr::rename('celltype_label' = ct_label) %>% 
+
+# Remove low abundant cell types 
+keep_labels <- table(use_data[[ct_label]]) %>% data.frame %>% filter(Freq >= 100) %>% pull(Var1)
+keep_rows <- use_data[[ct_label]] %in% keep_labels
+use_data <- use_data[keep_rows,]
+
+# Run propeller Global
+propeller_global <- propeller(clusters = use_data[[ct_label]], sample = use_data$sample, group = use_data$site) %>% 
+  rownames_to_column('cell_type')
+
+# Run pairwise propeller to obtaib P-values
+site_levels <- use_data$site_caps %>% unique
+site_combn <- combn(site_levels, 2, simplify = FALSE)
+sc <-  site_combn[[1]]
+propeller_pairwise <-foreach(sc = site_combn, .combine = rbind) %do% {
+  cat(sc)
+  use_data <- colData(sce_comb) %>% data.frame %>% 
+    filter(site_caps %in% sc) %>% 
+    mutate(
+      sample = paste(mouse_id, site_caps, sep = '_'),
+      group = ifelse(site_caps == sc[1], 'group1', 'group2')
+    )
+  keep_rows <- use_data[[ct_label]] %in% keep_labels
+  use_data <- use_data[keep_rows,]
+  propeller(clusters = use_data[[ct_label]], sample = use_data$sample, group = use_data$group) %>% 
+    mutate(
+      group1 = sc[1],
+      group2 = sc[2],
+      FDR.sign = symnum(FDR, corr = FALSE, na = FALSE, cutpoints = c(0, 0.0001,0.001, 0.01, 0.05, 1), symbols = c("****", "***", "**", "*", "")),
+      p.sign = symnum(P.Value, corr = FALSE, na = FALSE, cutpoints = c(0, 0.0001, 0.001, 0.01, 0.05, 1), symbols = c("****", "***", "**", "*", ""))
+    ) %>% 
+    dplyr::rename(cell_type = BaselineProp.clusters)
+}
+
+```
+
+Table of results with pairwise comparison between sites for cluster abundance. 
+```{r da_propeller_immgen_tab}
+propeller_pairwise %>%
+  arrange(FDR) %>% 
+  datatable(., 
+            rownames = FALSE, 
+            filter = 'top', 
+            caption = 'Pairwise comparison between cell types for cluster abundance using speckle::propeller',
+            extensions = 'Buttons', 
+            options = list(
+              dom = 'Blfrtip',
+              buttons = c('csv', 'excel')
+            )) %>% 
+  formatPercentage(names(propeller_pairwise)[2:4], digits = 3) %>% 
+  formatRound(names(propeller_pairwise)[5:6], digits = 3, interval = -1000) %>% 
+  formatSignif(c('P.Value', 'FDR'), digits = 3)
+```
+
+### Distribution by site
+```{r da_dist_site_data_immgen}
+# Create data
+use_data <- colData(sce_comb) %>% 
+  data.frame %>% 
+  dplyr::rename('celltype_label' = ct_label) %>% 
+  group_by(site_caps, celltype_label) %>% 
+  summarise(freq = n()) %>% 
+  dplyr::rename(cell_type = celltype_label) %>% 
+  na.omit()
+
+# Remove low abundant cell types
+cell_type_freq <- use_data %>% group_by(cell_type) %>% summarise(totalfreq = sum(freq))
+site_filtered <- use_data %>% group_by(site_caps) %>% summarise(freq = sum(freq)) %>% filter(freq >= 500)
+use_data <- use_data %>% 
+  filter(site_caps %in% site_filtered$site_caps) %>% 
+  left_join(cell_type_freq) %>% 
+  filter(totalfreq >= 50) %>% 
+  mutate(cell_type = fct_reorder(cell_type, totalfreq))
+
+# Arrange data and add labels
+arranged_data <- use_data %>% 
+  arrange(site_caps, cell_type)%>% 
+  group_by(site_caps) %>%
+  mutate(
+    totalfreq_by_site = sum(freq),
+    proportion = freq/ totalfreq_by_site,
+    label_y = cumsum(freq)/ totalfreq_by_site,
+    label_y = label_y - 0.5 * (freq / totalfreq_by_site),
+    cell_type = fct_reorder(cell_type, totalfreq, .desc = TRUE),
+    cell_type_label = as.character(cell_type),
+    cell_type_label = ifelse(proportion < 0.03, '', cell_type_label)
+    
+  )
+
+```
+
+#### Doughnut chart
+```{r da_doughnut_site_celltypefacet_immgen, fig.width = 4, fig.asp = 0.3}
+i <- unique(arranged_data$site_caps)[1]
+use_data <- foreach(i = unique(arranged_data$site_caps), .combine = rbind) %do% {
+  x <- arranged_data %>% 
+    filter(site_caps == i) %>% 
+    arrange(cell_type)
+  x$ymax <- cumsum(x$proportion)
+  x$ymin <- c(0, head(x$ymax, n = -1))
+  x
+}
+
+use_data %>% 
+  ggplot(aes(ymax=ymax, ymin=ymin, xmax=4, xmin=3, fill=cell_type)) +
+  geom_rect() +
+  coord_polar(theta="y") + # Try to remove that to understand how the chart is built initially
+  xlim(c(2, 4)) + # Try to remove that to see how to make a pie chart
+  scale_fill_manual(values = celltype_palette) +
+  facet_wrap(vars(site_caps), ncol = 3) +
+  theme(
+    strip.background = element_blank(),
+    axis.text=element_blank(),
+    axis.ticks=element_blank(),
+    axis.line =element_blank()
+  ) +
+  labs(
+    fill = '', 
+    x = NULL,
+    y = NULL
+  )
+```
+
+
+### Distribution by site and mouse
+```{r da_dist_site_and_mouse_data_immgen}
+# Create data
+use_data <- colData(sce_comb) %>% 
+  data.frame %>%
+  dplyr::rename('celltype_label' = ct_label) %>% 
+  group_by(site_caps, mouse_id, celltype_label) %>% 
+  summarise(freq = n()) %>% 
+  dplyr::rename(cell_type = celltype_label) %>% 
+  na.omit()
+
+# Remove low abundant cell types and sites
+cell_type_freq <- use_data %>% group_by(cell_type) %>% summarise(totalfreq = sum(freq))
+site_filtered <- use_data %>% group_by(site_caps) %>% summarise(freq = sum(freq)) %>% filter(freq >= 500)
+use_data <- use_data %>% 
+  filter(site_caps %in% site_filtered$site_caps) %>% 
+  left_join(cell_type_freq) %>% 
+  filter(totalfreq >= 50) %>% 
+  mutate(cell_type = fct_reorder(cell_type, totalfreq))
+
+# Arrange data and add labels
+arranged_data <- use_data %>% 
+  arrange(site_caps, cell_type)%>% 
+  group_by(site_caps, mouse_id) %>%
+  mutate(
+    totalfreq_by_site = sum(freq),
+    proportion = freq/ totalfreq_by_site,
+    label_y = cumsum(freq)/ totalfreq_by_site,
+    label_y = label_y - 0.5 * (freq / totalfreq_by_site),
+    cell_type = fct_reorder(cell_type, totalfreq, .desc = TRUE),
+    cell_type_label = as.character(cell_type),
+    cell_type_label = ifelse(proportion < 0.03, '', cell_type_label),
+    mouse_id = gsub("mouse_", "", mouse_id)
+  )
+```
+
+#### Doughnut chart
+```{r da_doughnut_site_and_mouse_celltypefacet_immgen, fig.width = 4, fig.asp = 1.2}
+i <- unique(arranged_data$site_caps)[1]
+use_data <- foreach(i = unique(arranged_data$site_caps), .combine = rbind) %do% {
+  foreach(j = unique(arranged_data$mouse_id), .combine = rbind) %do% {
+    x <- arranged_data %>% 
+      filter(site_caps == i & mouse_id == j) %>% 
+      arrange(cell_type)
+    x$ymax <- cumsum(x$proportion)
+    x$ymin <- c(0, head(x$ymax, n = -1))
+    x
+  }
+}
+
+use_data %>% 
+  ggplot(aes(ymax=ymax, ymin=ymin, xmax=4, xmin=3, fill=cell_type)) +
+  geom_rect() +
+  coord_polar(theta="y") + # Try to remove that to understand how the chart is built initially
+  xlim(c(2, 4)) + # Try to remove that to see how to make a pie chart
+  scale_fill_manual(values = celltype_palette) +
+  facet_grid(mouse_id ~ site_caps) +
+  theme(
+    strip.background = element_blank(),
+    axis.text=element_blank(),
+    axis.ticks=element_blank(),
+    axis.line =element_blank()
+  ) +
+  labs(
+    fill = '', 
+    x = NULL,
+    y = NULL
+  )
+```
+
+
+### Stripchart-Boxplot
+```{r da_stripchart_site_and_mouse_celltypefacet1_immgen, fig.asp = 0.8}
+max_prop_cell_type <- arranged_data %>% group_by(cell_type) %>% summarise(max_proportion = max(proportion))
+stat_test <- propeller_pairwise %>% 
+  filter(group1 %in% arranged_data$site_caps & group2 %in%  arranged_data$site_caps) %>%
+  left_join(max_prop_cell_type) %>% 
+  arrange(cell_type, group1, group2) %>% 
+  na.omit() %>% 
+  filter(FDR < 0.05)
+  
+add_count_y <- stat_test %>% group_by(cell_type) %>% reframe(group1 = group1, group2 = group2, n = 1:n())
+stat_test <- stat_test %>% left_join(add_count_y) %>% mutate(y.position = max_proportion + (n*max_proportion/10))
+
+
+arranged_data %>% 
+  ggplot(aes(x = site_caps, y = proportion, color = site_caps)) +
+  geom_boxplot(alpha = 0.4, color = 'black', aes(fill = site_caps), 
+               show.legend = FALSE, size = 0.25, fatten = 1) +
+  # geom_point(alpha = 1, size = 2, shape = 21, color = 'black', aes(fill = site_caps)) +
+  geom_quasirandom(method="smiley", width = 0.1, alpha = 1, size = 1, 
+                   shape = 21, color = 'black', aes(fill = site_caps), stroke = 0.4) +
+  # geom_quasirandom(method="smiley", width = 0.1, alpha = 1, size = 1, aes(color = site_caps)) +
+  # scale_fill_OkabeIto() +
+  # scale_color_OkabeIto() +
+  scale_fill_manual(values = site_palette) +
+  scale_color_manual(values = site_palette) +
+  # scale_y_continuous(expand = c(0, 0)) +
+  scale_y_continuous(expand = c(0.02, 0, 0.08, 0)) +
+  scale_x_discrete(expand = c(0, 0.5)) +
+  facet_wrap(vars(cell_type), scales = 'free_y', ncol = 2) +
+  theme(
+    # strip.background = element_blank(),
+    # axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1), 
+    axis.text.x=element_blank(),
+    axis.ticks.x=element_blank(),
+    panel.border = element_rect(colour = "black", size=0.5),
+    strip.background = element_blank()
+  ) +
+  # guides( color = 'none') +
+  guides(fill = guide_legend(override.aes = list(size = 3))) +
+  labs(
+    fill = NULL,
+    x = NULL,
+    y = 'Proportion of cells'
+  ) +
+  stat_pvalue_manual(stat_test, label = 'FDR.sign', size = 2)
+```
+
+
+## Site markers for each cell type
+
+For each cell type we tried to identify potential markers to distinguish between sites
+```{r site-celltype-markers-conf}
+n_top_mk <- 10
+celltype_label <- 'celltype_immgen_pruned.labels'
+j <- score_markers$site_celltype_markers[[1]][[1]]
+mk_list <- foreach(i = score_markers$site_celltype_markers) %do% {
+  foreach(j = i, .combine = c) %do% {
+    j %>% data.frame %>% arrange(desc(mean.AUC)) %>% head(n_top_mk) %>% rownames( d)
+  } %>% unique
+}
+names(mk_list) <- names(score_markers$site_celltype_markers)
+```
+
+
+### DC
+In the plot below, color represent the Z-score based on average expression of the gene in each group. Z score is limited to -2 to 2 range. Point size represent the proportion of cells with detected expression.
+```{r site-celltype-markers-dc-dotplot, fig.dim = c(8.12, 2.096)}
+use_celltype_label <- 'DC'
+use_rows <- mk_list[[use_celltype_label]]
+use_cols <- (sce_comb[[celltype_label]] == use_celltype_label & !is.na(sce_comb[[celltype_label]]))
+use_sce <- sce_comb[use_rows, use_cols]
+rownames(use_sce) <- rowData(use_sce)$gene_name
+res_plot <- plotDots(
+    use_sce,
+    features=rownames(use_sce), 
+    group='site_caps',
+    center=TRUE, scale = TRUE,
+    zlim = c(-2,2)
+  )
+
+# Get data
+plot_data <- ggplot_build(res_plot)$plot$data %>% 
+  mutate(Group = factor(Group, levels = rev(c('Primary tumor', 'Liver', 'Lung'))))
+
+# Create color scale
+group <- retrieveCellInfo(use_sce, 'site_caps', search="colData")$value
+ids <- DataFrame(group=group)
+summarized <- summarizeAssayByGroup(
+        assay(use_sce, "logcounts")[as.character(rownames(use_sce)), , drop = FALSE],
+        ids=ids, 
+        statistics=c("mean", "prop.detected"),
+        threshold=0)
+    
+ave <- assay(summarized, "mean")
+use_heatmap_scale <- heatmap_scale(ave, 
+                                   center=TRUE, 
+                                   scale=TRUE, 
+                                   colour=NULL, 
+                                   zlim=c(-2,2))
+
+res_plot <- ggplot(plot_data) +
+  geom_point(aes(x=.data$Group, 
+                 y=.data$Feature, 
+                 size=.data$NumDetected, 
+                 # col=.data$Average,
+                 fill=.data$Average),
+             pch = 21,
+             color = 'black') +
+  scale_size(limits=c(0, max(plot_data$NumDetected))) +
+  # use_heatmap_scale$colour_scale +
+  use_heatmap_scale$fill_scale +
+  # theme_minimal() +
+  theme(
+    panel.border = element_rect(colour = "black", fill=NA, linewidth = 2*one_pt)
+    ) +
+  coord_flip() +
+  scale_y_discrete(guide = guide_axis(angle = 45)) +
+  labs(
+    x = '',
+    y = '',
+    color = 'Z-score',
+    size = 'Proportion\nof cells'
+  )
+
+res_plot + theme( legend.position = "none")
+```
+
+### Endothelial cells
+In the plot below, color represent the Z-score based on average expression of the gene in each group. Z score is limited to -2 to 2 range. Point size represent the proportion of cells with detected expression.
+```{r site-celltype-markers-endothelial-dotplot, fig.dim = c(8.12, 2.096)}
+use_celltype_label <- 'Endothelial cells'
+use_rows <- mk_list[[use_celltype_label]]
+use_cols <- (sce_comb[[celltype_label]] == use_celltype_label & !is.na(sce_comb[[celltype_label]]))
+use_sce <- sce_comb[use_rows, use_cols]
+rownames(use_sce) <- rowData(use_sce)$gene_name
+res_plot <- plotDots(
+    use_sce,
+    features=rownames(use_sce), 
+    group='site_caps',
+    center=TRUE, scale = TRUE,
+    zlim = c(-2,2)
+  )
+
+# Get data
+plot_data <- ggplot_build(res_plot)$plot$data %>% 
+  mutate(Group = factor(Group, levels = rev(c('Primary tumor', 'Liver', 'Lung'))))
+
+# Create color scale
+group <- retrieveCellInfo(use_sce, 'site_caps', search="colData")$value
+ids <- DataFrame(group=group)
+summarized <- summarizeAssayByGroup(
+        assay(use_sce, "logcounts")[as.character(rownames(use_sce)), , drop = FALSE],
+        ids=ids, 
+        statistics=c("mean", "prop.detected"),
+        threshold=0)
+    
+ave <- assay(summarized, "mean")
+use_heatmap_scale <- heatmap_scale(ave, 
+                                   center=TRUE, 
+                                   scale=TRUE, 
+                                   colour=NULL, 
+                                   zlim=c(-2,2))
+
+res_plot <- ggplot(plot_data) +
+  geom_point(aes(x=.data$Group, 
+                 y=.data$Feature, 
+                 size=.data$NumDetected, 
+                 # col=.data$Average,
+                 fill=.data$Average),
+             pch = 21,
+             color = 'black') +
+  scale_size(limits=c(0, max(plot_data$NumDetected))) +
+  # use_heatmap_scale$colour_scale +
+  use_heatmap_scale$fill_scale +
+  # theme_minimal() +
+  theme(
+    panel.border = element_rect(colour = "black", fill=NA, linewidth = 2*one_pt)
+    ) +
+  coord_flip() +
+  scale_y_discrete(guide = guide_axis(angle = 45)) +
+  labs(
+    x = '',
+    y = '',
+    color = 'Z-score',
+    size = 'Proportion\nof cells'
+  )
+
+res_plot + theme( legend.position = "none")
+```
+
+### Fibroblasts
+In the plot below, color represent the Z-score based on average expression of the gene in each group. Z score is limited to -2 to 2 range. Point size represent the proportion of cells with detected expression.
+```{r site-celltype-markers-fibroblasts-dotplot, fig.dim = c(8.12, 2.096)}
+use_celltype_label <- 'Fibroblasts'
+use_rows <- mk_list[[use_celltype_label]]
+use_cols <- (sce_comb[[celltype_label]] == use_celltype_label & !is.na(sce_comb[[celltype_label]]))
+use_sce <- sce_comb[use_rows, use_cols]
+rownames(use_sce) <- rowData(use_sce)$gene_name
+res_plot <- plotDots(
+    use_sce,
+    features=rownames(use_sce), 
+    group='site_caps',
+    center=TRUE, scale = TRUE,
+    zlim = c(-2,2)
+  )
+
+# Get data
+plot_data <- ggplot_build(res_plot)$plot$data %>% 
+  mutate(Group = factor(Group, levels = rev(c('Primary tumor', 'Liver', 'Lung'))))
+
+# Create color scale
+group <- retrieveCellInfo(use_sce, 'site_caps', search="colData")$value
+ids <- DataFrame(group=group)
+summarized <- summarizeAssayByGroup(
+        assay(use_sce, "logcounts")[as.character(rownames(use_sce)), , drop = FALSE],
+        ids=ids, 
+        statistics=c("mean", "prop.detected"),
+        threshold=0)
+    
+ave <- assay(summarized, "mean")
+use_heatmap_scale <- heatmap_scale(ave, 
+                                   center=TRUE, 
+                                   scale=TRUE, 
+                                   colour=NULL, 
+                                   zlim=c(-2,2))
+
+res_plot <- ggplot(plot_data) +
+  geom_point(aes(x=.data$Group, 
+                 y=.data$Feature, 
+                 size=.data$NumDetected, 
+                 # col=.data$Average,
+                 fill=.data$Average),
+             pch = 21,
+             color = 'black') +
+  scale_size(limits=c(0, max(plot_data$NumDetected))) +
+  # use_heatmap_scale$colour_scale +
+  use_heatmap_scale$fill_scale +
+  # theme_minimal() +
+  theme(
+    panel.border = element_rect(colour = "black", fill=NA, linewidth = 2*one_pt)
+    ) +
+  coord_flip() +
+  scale_y_discrete(guide = guide_axis(angle = 45)) +
+  labs(
+    x = '',
+    y = '',
+    color = 'Z-score',
+    size = 'Proportion\nof cells'
+  )
+
+res_plot + theme( legend.position = "none")
+```
+
+### Macrophages
+In the plot below, color represent the Z-score based on average expression of the gene in each group. Z score is limited to -2 to 2 range. Point size represent the proportion of cells with detected expression.
+```{r site-celltype-markers-macrophages-dotplot, fig.dim = c(8.12, 2.096)}
+use_celltype_label <- 'Macrophages'
+use_rows <- mk_list[[use_celltype_label]]
+use_cols <- (sce_comb[[celltype_label]] == use_celltype_label & !is.na(sce_comb[[celltype_label]]))
+use_sce <- sce_comb[use_rows, use_cols]
+rownames(use_sce) <- rowData(use_sce)$gene_name
+res_plot <- plotDots(
+    use_sce,
+    features=rownames(use_sce), 
+    group='site_caps',
+    center=TRUE, scale = TRUE,
+    zlim = c(-2,2)
+  )
+
+# Get data
+plot_data <- ggplot_build(res_plot)$plot$data %>% 
+  mutate(Group = factor(Group, levels = rev(c('Primary tumor', 'Liver', 'Lung'))))
+
+# Create color scale
+group <- retrieveCellInfo(use_sce, 'site_caps', search="colData")$value
+ids <- DataFrame(group=group)
+summarized <- summarizeAssayByGroup(
+        assay(use_sce, "logcounts")[as.character(rownames(use_sce)), , drop = FALSE],
+        ids=ids, 
+        statistics=c("mean", "prop.detected"),
+        threshold=0)
+    
+ave <- assay(summarized, "mean")
+use_heatmap_scale <- heatmap_scale(ave, 
+                                   center=TRUE, 
+                                   scale=TRUE, 
+                                   colour=NULL, 
+                                   zlim=c(-2,2))
+
+res_plot <- ggplot(plot_data) +
+  geom_point(aes(x=.data$Group, 
+                 y=.data$Feature, 
+                 size=.data$NumDetected, 
+                 # col=.data$Average,
+                 fill=.data$Average),
+             pch = 21,
+             color = 'black') +
+  scale_size(limits=c(0, max(plot_data$NumDetected))) +
+  # use_heatmap_scale$colour_scale +
+  use_heatmap_scale$fill_scale +
+  # theme_minimal() +
+  theme(
+    panel.border = element_rect(colour = "black", fill=NA, linewidth = 2*one_pt)
+    ) +
+  coord_flip() +
+  scale_y_discrete(guide = guide_axis(angle = 45)) +
+  labs(
+    x = '',
+    y = '',
+    color = 'Z-score',
+    size = 'Proportion\nof cells'
+  )
+
+res_plot + theme( legend.position = "none")
+```
+
+### Monocytes
+In the plot below, color represent the Z-score based on average expression of the gene in each group. Z score is limited to -2 to 2 range. Point size represent the proportion of cells with detected expression.
+```{r site-celltype-markers-monocytes-dotplot, fig.dim = c(8.12, 2.096)}
+use_celltype_label <- 'Monocytes'
+use_rows <- mk_list[[use_celltype_label]]
+use_cols <- (sce_comb[[celltype_label]] == use_celltype_label & !is.na(sce_comb[[celltype_label]]))
+use_sce <- sce_comb[use_rows, use_cols]
+rownames(use_sce) <- rowData(use_sce)$gene_name
+res_plot <- plotDots(
+    use_sce,
+    features=rownames(use_sce), 
+    group='site_caps',
+    center=TRUE, scale = TRUE,
+    zlim = c(-2,2)
+  )
+
+# Get data
+plot_data <- ggplot_build(res_plot)$plot$data %>% 
+  mutate(Group = factor(Group, levels = rev(c('Primary tumor', 'Liver', 'Lung'))))
+
+# Create color scale
+group <- retrieveCellInfo(use_sce, 'site_caps', search="colData")$value
+ids <- DataFrame(group=group)
+summarized <- summarizeAssayByGroup(
+        assay(use_sce, "logcounts")[as.character(rownames(use_sce)), , drop = FALSE],
+        ids=ids, 
+        statistics=c("mean", "prop.detected"),
+        threshold=0)
+    
+ave <- assay(summarized, "mean")
+use_heatmap_scale <- heatmap_scale(ave, 
+                                   center=TRUE, 
+                                   scale=TRUE, 
+                                   colour=NULL, 
+                                   zlim=c(-2,2))
+
+res_plot <- ggplot(plot_data) +
+  geom_point(aes(x=.data$Group, 
+                 y=.data$Feature, 
+                 size=.data$NumDetected, 
+                 # col=.data$Average,
+                 fill=.data$Average),
+             pch = 21,
+             color = 'black') +
+  scale_size(limits=c(0, max(plot_data$NumDetected))) +
+  # use_heatmap_scale$colour_scale +
+  use_heatmap_scale$fill_scale +
+  # theme_minimal() +
+  theme(
+    panel.border = element_rect(colour = "black", fill=NA, linewidth = 2*one_pt)
+    ) +
+  coord_flip() +
+  scale_y_discrete(guide = guide_axis(angle = 45)) +
+  labs(
+    x = '',
+    y = '',
+    color = 'Z-score',
+    size = 'Proportion\nof cells'
+  )
+
+res_plot + theme( legend.position = "none")
+```
+
+### Neutrophils
+In the plot below, color represent the Z-score based on average expression of the gene in each group. Z score is limited to -2 to 2 range. Point size represent the proportion of cells with detected expression.
+```{r site-celltype-markers-neutrophils-dotplot, fig.dim = c(8.12, 2.096)}
+use_celltype_label <- 'Neutrophils'
+use_rows <- mk_list[[use_celltype_label]]
+use_cols <- (sce_comb[[celltype_label]] == use_celltype_label & !is.na(sce_comb[[celltype_label]]))
+use_sce <- sce_comb[use_rows, use_cols]
+rownames(use_sce) <- rowData(use_sce)$gene_name
+res_plot <- plotDots(
+    use_sce,
+    features=rownames(use_sce), 
+    group='site_caps',
+    center=TRUE, scale = TRUE,
+    zlim = c(-2,2)
+  )
+
+# Get data
+plot_data <- ggplot_build(res_plot)$plot$data %>% 
+  mutate(Group = factor(Group, levels = rev(c('Primary tumor', 'Liver', 'Lung'))))
+
+# Create color scale
+group <- retrieveCellInfo(use_sce, 'site_caps', search="colData")$value
+ids <- DataFrame(group=group)
+summarized <- summarizeAssayByGroup(
+        assay(use_sce, "logcounts")[as.character(rownames(use_sce)), , drop = FALSE],
+        ids=ids, 
+        statistics=c("mean", "prop.detected"),
+        threshold=0)
+    
+ave <- assay(summarized, "mean")
+use_heatmap_scale <- heatmap_scale(ave, 
+                                   center=TRUE, 
+                                   scale=TRUE, 
+                                   colour=NULL, 
+                                   zlim=c(-2,2))
+
+res_plot <- ggplot(plot_data) +
+  geom_point(aes(x=.data$Group, 
+                 y=.data$Feature, 
+                 size=.data$NumDetected, 
+                 # col=.data$Average,
+                 fill=.data$Average),
+             pch = 21,
+             color = 'black') +
+  scale_size(limits=c(0, max(plot_data$NumDetected))) +
+  # use_heatmap_scale$colour_scale +
+  use_heatmap_scale$fill_scale +
+  # theme_minimal() +
+  theme(
+    panel.border = element_rect(colour = "black", fill=NA, linewidth = 2*one_pt)
+    ) +
+  coord_flip() +
+  scale_y_discrete(guide = guide_axis(angle = 45)) +
+  labs(
+    x = '',
+    y = '',
+    color = 'Z-score',
+    size = 'Proportion\nof cells'
+  )
+
+res_plot + theme( legend.position = "none")
+```
+
+### Legend
+```{r site-celltype-markers-legend-dotplot, fig.dim = c(3.12, 3.096)}
+legend <- cowplot::get_legend(res_plot)
+grid.newpage()
+grid.draw(legend)
+```

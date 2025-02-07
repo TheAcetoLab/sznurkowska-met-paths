@@ -1,0 +1,865 @@
+---
+title: "10x RNA-seq analysis of MVT1 cancer and microenvironment in tumor and mets"
+subtitle: "TME analysis in primary tumor, lung and liver metastases: subclustering of Monocytes, Macrophages and DC cells"
+author: "Francesc Castro-Giner"
+date: '`r format(Sys.Date(), "%B %d, %Y")`'
+output: workflowr::wflow_html
+editor_options:
+  chunk_output_type: console
+params:
+  date: '`r format(Sys.Date(), "%B %d, %Y")`'
+  cellranger_count_dir: ./data/rnaseq/p26532_o28268/pipelines/cellranger_featurebarcodes
+  output_dir: ./output/p26532_o28268/p26532_o28268-10x_rnaseq-pll-tme-hq/subclustering-mono_macro_dc
+  ncores: 6
+---
+
+## Load libraries, additional functions and data
+
+Setup environment
+```{r setup, include=TRUE, warning=FALSE, message=FALSE}
+knitr::opts_chunk$set(results='asis', echo=TRUE, message=FALSE, warning=FALSE, error=FALSE, fig.align = 'center', fig.width = 3.5, fig.asp = 0.618, dpi = 600, dev = c("png", "pdf"), fig.showtext = FALSE)
+
+options(stringsAsFactors = FALSE)
+
+use_seed <- 1100101
+set.seed(use_seed)
+
+if(!dir.exists(params$output_dir))
+  dir.create(params$output_dir, recursive = TRUE, showWarnings = FALSE)
+```
+
+Load packages
+```{r load-libraries}
+library(tidyverse)
+library(showtext)
+library(foreach)
+library(DT)
+library(knitr)
+library(kableExtra)
+library(cowplot)
+library(colorblindr)
+library(ggbeeswarm)
+library(arsenal)
+library(RColorBrewer)
+library(ggpubr)
+library(pheatmap)
+library(patchwork)
+library(openxlsx)
+library(magrittr)
+
+library(scater)
+library(DropletUtils)
+library(Seurat)
+library(scran)
+library(BiocSingular)
+library(batchelor)
+library(bluster)
+library(celldex)
+library(SingleR)
+library(scDblFinder)
+library(speckle)
+library(miloR)
+library(ComplexHeatmap)
+library(clusterProfiler)
+library(GSVA)
+library(circlize)
+library(bluster)
+```
+
+Set font family for figures
+```{r set-font, eval = FALSE}
+font_add("Helvetica", "./configuration/fonts/Helvetica.ttc")
+showtext_auto()
+```
+
+Load ggplot theme
+```{r ggplot-theme}
+source("./configuration/rmarkdown/ggplot_theme.R")
+source("./configuration/rmarkdown/color_palettes.R")
+```
+
+Clean files generated in previous runs
+```{r clean-files}
+rmd_file <- current_input()
+if(!is.null(rmd_file)) {
+  figures_dir <- file.path('./docs/figure',rmd_file)
+  if(dir.exists(figures_dir)) {
+    unlink(file.path(figures_dir, "*"))
+  }
+}
+
+```
+
+
+## Data processing
+### General configuration
+```{r general-conf, eval = TRUE}
+selected_cluster_cell_types <- c('Macrophages')
+```
+
+### Clustering permutations
+Permutations using fastMNN integration and clustering
+```{r clustersweep-mnn, eval = FALSE}
+out_dir <- file.path(params$output_dir, 'subcluster_sweep')
+if(!dir.exists(out_dir))
+  dir.create(out_dir, recursive = TRUE, showWarnings = FALSE)
+
+if(!exists('sce_comb'))
+  sce_comb <- readRDS(file.path(params$output_dir, '..', 'sce_integrated-tme.rds'))
+if(!exists('sr_immgen'))
+  sr_immgen <- readRDS(file.path(params$output_dir, '..', 'SingleR_ImmGenData_annotation-tme.rds'))
+
+# Add cell type annotation
+sce_comb$celltype_pruned.labels <- sr_immgen$pred$pruned.labels
+sce_comb$celltype.labels <- sr_immgen$pred$labels
+sce_comb$celltype_pruned.labels.fine <- sr_immgen$pred_fine$pruned.labels
+sce_comb$celltype.labels.fine <- sr_immgen$pred_fine$labels
+
+# Add cluster level annotation using immgen database
+colData(sce_comb) <- colData(sce_comb) %>% data.frame %>%
+  mutate(cluster_mnn = as.character(cluster_mnn)) %>%
+  left_join(sr_immgen$pred_cluster_simplified) %>%
+  mutate(cluster_mnn = factor(cluster_mnn)) %>%
+  DataFrame
+
+# Filter data for selected group of cells
+use_cols <- sce_comb$celltype_cluster_labels == selected_cluster_cell_types
+use_sce <- sce_comb[,use_cols]
+
+# Remove reducedDim slots
+for(i in reducedDimNames(use_sce))
+    reducedDim(use_sce, i) <- NULL
+
+# Remove genes for HVG
+mito_genes <- rownames(use_sce)[rowData(use_sce)$is.mito]
+ribo_genes <- rownames(use_sce)[rowData(use_sce)$is.ribo]
+use_genes <- rownames(use_sce)[!rownames(use_sce) %in% c(mito_genes, ribo_genes)]
+dec <- modelGeneVar(use_sce[use_genes,], block = use_sce$Sample) 
+
+# Perform permutations
+d_list <- c(5, 8, 10, 15, 20, 30, 35, 40, 50)
+k_list <- c(10, 15, 20, 30)
+ntop_list <- c(500, 1000, seq(2000, sum(dec$bio > 0), 2000), sum(dec$bio > 0))
+n_top <- 1000
+use_k <- k_list[1]
+use_d <- d_list[1]
+for(n_top in ntop_list){
+  sce_list_k <- foreach(use_k = k_list) %do% {
+    sce_list_d <- foreach(use_d = d_list) %do% {
+      cat("HVG =", n_top, "; K =", use_k, "; D =", use_d, '\n')
+      chosen_hvgs <- getTopHVGs(dec, n=n_top)
+      # MNN correction
+      use_sce_mnn <- fastMNN(use_sce, 
+                             batch = use_sce$batch, 
+                             auto.merge = TRUE, 
+                             subset.row=chosen_hvgs, 
+                             BSPARAM=RandomParam(deferred=TRUE), 
+                             BPPARAM=BiocParallel::MulticoreParam(params$ncores, RNGseed=use_seed),
+                             d=use_d, k=use_k)
+      colData(use_sce_mnn) <- colData(use_sce)
+      
+      # Clustering using corrected values
+      use_sce_mnn$cluster_mnn  <- clusterCells(
+        use_sce_mnn,
+        use.dimred="corrected",
+        BLUSPARAM=SNNGraphParam(k=use_k, type="rank", cluster.fun="walktrap", BPPARAM=BiocParallel::MulticoreParam(1, RNGseed=use_seed))
+      )
+      
+      # Dimensionality reduction
+      use_sce_mnn <- runUMAP(
+        use_sce_mnn, dimred="corrected", 
+        BPPARAM=BiocParallel::MulticoreParam(params$ncores, RNGseed=use_seed)
+      )
+      reducedDim(use_sce, 'UMAP') <- reducedDim(use_sce_mnn, 'UMAP')
+      
+      # Purity Cell type
+      sce_i <- use_sce_mnn[,!is.na(use_sce_mnn$celltype_pruned.labels)]
+      pure.data.res <- neighborPurity(reducedDim(sce_i, "corrected"), sce_i$celltype_pruned.labels,  BPPARAM=BiocParallel::MulticoreParam(params$ncores, RNGseed=use_seed))
+      pure.data <- as.data.frame(pure.data.res)
+      pure.data$maximum <- factor(pure.data$maximum)
+      pure.data$cluster <- sce_i$cluster_mnn
+      pure.data$celltype_pruned.labels <- sce_i$celltype_pruned.labels
+      metadata(use_sce_mnn)$purity_celltype_pruned <- pure.data
+      rm(sce_i)
+      
+      # Purity Cell type fine
+      sce_i <- use_sce_mnn[,!is.na(use_sce_mnn$celltype_pruned.labels.fine)]
+      pure.data.res <- neighborPurity(reducedDim(sce_i, "corrected"), sce_i$celltype_pruned.labels.fine,  BPPARAM=BiocParallel::MulticoreParam(params$ncores, RNGseed=use_seed))
+      pure.data <- as.data.frame(pure.data.res)
+      pure.data$maximum <- factor(pure.data$maximum)
+      pure.data$cluster <- sce_i$cluster_mnn
+      pure.data$celltype_pruned.labels.fine <- sce_i$celltype_pruned.labels.fine
+      metadata(use_sce_mnn)$purity_celltype_pruned_fine <- pure.data
+      rm(sce_i)
+      
+      # Purity Clusters
+      sce_i <- use_sce_mnn
+      pure.data.res <- neighborPurity(reducedDim(sce_i, "corrected"), sce_i$cluster_mnn,  BPPARAM=BiocParallel::MulticoreParam(params$ncores, RNGseed=use_seed))
+      pure.data <- as.data.frame(pure.data.res)
+      pure.data$maximum <- factor(pure.data$maximum)
+      pure.data$cluster <- sce_i$cluster_mnn
+      metadata(use_sce_mnn)$purity_cluster_mnn <- pure.data
+      rm(sce_i)
+
+      # ClusterSweep
+      metadata(use_sce_mnn)$clusterSweep <- clusterSweep(reducedDim(use_sce_mnn, "corrected"), 
+                                                         SNNGraphParam(), 
+                                                         k=as.integer(c(5, 10, 15, 20, 25, 30, 35, 40)),
+                                                         type="rank",
+                                                         cluster.fun=c("walktrap"),
+                                                         BPPARAM=BiocParallel::MulticoreParam(params$ncores, RNGseed=use_seed))
+      
+      # Purity ClusterSweep
+      sweep_clusters <- metadata(use_sce_mnn)$clusterSweep$clusters
+      apply(sweep_clusters, 2, table)
+      cl <- colnames(sweep_clusters)[1]
+      metadata(use_sce_mnn)$purity_clusterSweep <- foreach(cl=colnames(sweep_clusters)) %do% {
+        pure.data.res <- neighborPurity(reducedDim(use_sce_mnn, "corrected"), sweep_clusters[,cl],  BPPARAM=BiocParallel::MulticoreParam(params$ncores, RNGseed=use_seed))
+        pure.data <- as.data.frame(pure.data.res)
+        pure.data$maximum <- factor(pure.data$maximum)
+        pure.data$cluster <- sweep_clusters[,cl]
+        pure.data$celltype_pruned.labels <- use_sce_mnn$celltype_pruned.labels
+        pure.data$celltype_pruned.labels.fine <- use_sce_mnn$celltype_pruned.labels.fine
+        pure.data
+      }
+      names(metadata(use_sce_mnn)$purity_clusterSweep) <- colnames(sweep_clusters)
+      use_sce_mnn
+    }
+    names(sce_list_d) <- d_list
+    sce_list_d
+  }
+  names(sce_list_k) <- k_list
+  saveRDS(sce_list_k, file.path(out_dir, paste0('clusterSweep','.hvg_',n_top,'.rds')))
+}
+```
+
+
+### Batch correction, clustering and dimensionality reduction
+Here, we actually perform the correction itself. We also perform the clustering.
+```{r batch-correction, eval = FALSE}
+n_top_hvg <- 8000
+use_d <- 30
+use_k <- 40
+use_k_mnn <- 10
+
+# n_top_hvg <- 8650
+# use_d <- 5
+# use_k <- 35
+# use_k_mnn <- 20
+
+# n_top_hvg <- 500
+# use_d <- 50
+# use_k <- 40
+# use_k_mnn <- 10
+
+if(!exists('sce_comb'))
+  sce_comb <- readRDS(file.path(params$output_dir, '..', 'sce_integrated-tme.rds'))
+if(!exists('sr_immgen'))
+  sr_immgen <- readRDS(file.path(params$output_dir, '..', 'SingleR_ImmGenData_annotation-tme.rds'))
+
+# Add cell type annotation
+for(i in colData(sce_comb) %>% names %>% grep("^celltype.*", ., value = T)) {
+  colData(sce_comb)[[i]] <- NULL
+}
+sce_comb$celltype_pruned.labels <- sr_immgen$pred$pruned.labels
+sce_comb$celltype.labels <- sr_immgen$pred$labels
+sce_comb$celltype_pruned.labels.fine <- sr_immgen$pred_fine$pruned.labels
+sce_comb$celltype.labels.fine <- sr_immgen$pred_fine$labels
+
+# Add cluster level annotation using immgen database
+colData(sce_comb) <- colData(sce_comb) %>% data.frame %>%
+  mutate(cluster_mnn = as.character(cluster_mnn)) %>%
+  left_join(sr_immgen$pred_cluster_simplified) %>%
+  mutate(cluster_mnn = factor(cluster_mnn)) %>%
+  DataFrame
+
+# Filter data for selected group of cells
+use_cols <- sce_comb$celltype_cluster_labels == selected_cluster_cell_types
+use_sce <- sce_comb[,use_cols]
+
+# Remove reducedDim slots
+for(i in reducedDimNames(use_sce))
+    reducedDim(use_sce, i) <- NULL
+
+# Remove previous clustering
+use_sce$cluster_mnn <- NULL
+
+# Remove genes for HVG
+mito_genes <- rownames(use_sce)[rowData(use_sce)$is.mito]
+ribo_genes <- rownames(use_sce)[rowData(use_sce)$is.ribo]
+use_genes <- rownames(use_sce)[!rownames(use_sce) %in% c(mito_genes, ribo_genes)]
+
+# Select HVG
+dec <- modelGeneVar(use_sce[use_genes,], block = use_sce$Sample) 
+chosen_hvgs <- getTopHVGs(dec, n=n_top_hvg)
+
+# MNN correction
+use_sce_mnn <- fastMNN(use_sce, 
+                       batch = use_sce$batch, 
+                       auto.merge = TRUE, 
+                       subset.row=chosen_hvgs, 
+                       BSPARAM=RandomParam(deferred=TRUE), 
+                       BPPARAM=BiocParallel::MulticoreParam(params$ncores, RNGseed=use_seed),
+                       d=use_d, k=use_k_mnn)
+colData(use_sce_mnn) <- colData(use_sce)
+reducedDim(use_sce, 'corrected') <- reducedDim(use_sce_mnn, 'corrected')
+
+# Clustering using corrected values
+use_sce_mnn$cluster_mnn  <- clusterCells(
+  use_sce_mnn,
+  use.dimred="corrected",
+  BLUSPARAM=SNNGraphParam(k=use_k, type="rank", cluster.fun="walktrap", BPPARAM=BiocParallel::MulticoreParam(params$ncores, RNGseed=use_seed))
+)
+use_sce$cluster_mnn <- use_sce_mnn$cluster_mnn
+
+
+# Cluster neighborPurity
+metadata(use_sce)$purity_cluster_mnn <- neighborPurity(reducedDim(use_sce, "corrected"), use_sce$cluster_mnn,  BPPARAM=BiocParallel::MulticoreParam(params$ncores, RNGseed=use_seed))
+# median(metadata(use_sce)$purity_cluster_mnn$purity)
+# IQR(metadata(use_sce)$purity_cluster_mnn$purity)
+
+
+# Dimensionality reduction
+use_sce_mnn <- runUMAP(
+  use_sce_mnn, dimred="corrected", 
+  BPPARAM=BiocParallel::MulticoreParam(params$ncores, RNGseed=use_seed)
+)
+reducedDim(use_sce, 'UMAP') <- reducedDim(use_sce_mnn, 'UMAP')
+# plotUMAP(use_sce, color_by = 'cluster_mnn')
+# plotUMAP(use_sce, color_by = 'celltype_pruned.labels')
+
+# MNN-related diagnostic examining the variance in the differences in expression between MNN pairs.
+metadata(use_sce_mnn)$mnnDeltaVariance <- mnnDeltaVariance(
+  use_sce,
+  pairs=metadata(use_sce_mnn)$merge.info$pairs, 
+  BPPARAM=BiocParallel::MulticoreParam(params$ncores, RNGseed=use_seed)
+  )
+
+# Save SCE objects
+saveRDS(use_sce_mnn, file.path(params$output_dir, 'sce_mnn.rds'))
+saveRDS(use_sce, file.path(params$output_dir, 'sce_integrated.rds'))
+rm(sce_comb)
+rm(use_sce_mnn)
+rm(use_sce)
+rm(sr_immgen)
+```
+
+### Annotate cell type at cluster level
+We are using the ImmGenData from celldex: normalized expression values of 830 microarray samples of pure mouse immune cells, generated by the [Immunologic Genome Project (ImmGen)](https://www.immgen.org/). This is currently the most highly resolved immune reference - possibly overwhelmingly so, given the granularity of the fine labels.
+```{r cell-type-annotation-single-R-ImmGenData, eval = FALSE}
+if(!exists('sce_comb'))
+  sce_comb <- readRDS(file.path(params$output_dir, 'sce_integrated.rds'))
+if(!exists('ref_mouse_imm'))
+  ref_mouse_imm <- celldex::ImmGenData()
+
+# SingleR::The default settings of this function are based on the assumption that ref contains or bulk data. If it contains single-cell data, this usually requires a different de.method choice. Read the Note in ?trainSingleR for more details.
+
+# Run SingleR at cluster level with main label
+pred_cluster <- SingleR(test=sce_comb, 
+                        clusters=sce_comb$cluster_mnn, 
+                        ref=ref_mouse_imm, 
+                        labels=ref_mouse_imm$label.main)
+
+pred_cluster_simplified <- pred_cluster %>% 
+  data.frame %>% 
+  dplyr::select(labels,pruned.labels) %>% 
+  dplyr::rename(celltype_cluster_labels = labels, celltype_cluster_pruned.labels = pruned.labels) %>% 
+  rownames_to_column('cluster_mnn')
+
+
+# Run SingleR at cluster level with fine label
+pred_cluster_fine <- SingleR(test=sce_comb,
+                     clusters=sce_comb$cluster_mnn, 
+                     ref=ref_mouse_imm, 
+                     labels=ref_mouse_imm$label.fine)
+
+pred_cluster_fine_simplified <- pred_cluster_fine %>% 
+  data.frame %>% 
+  dplyr::select(labels,pruned.labels) %>% 
+  dplyr::rename(celltype_cluster_fine.labels = labels, celltype_cluster_pruned_fine.labels = pruned.labels) %>% 
+  rownames_to_column('cluster_mnn')
+
+# Save results
+res <- list(
+  pred_cluster = pred_cluster,
+  pred_cluster_simplified = pred_cluster_simplified,
+  pred_cluster_fine = pred_cluster_fine,
+  pred_cluster_fine_simplified = pred_cluster_fine_simplified
+)
+saveRDS(res, file.path(params$output_dir, 'SingleR_ImmGenData_annotation.rds'))
+rm(res)
+```
+
+### Markers detection
+
+We identify the genes that drive separation between clusters and cell types. These marker genes allow us to assign biological meaning to each cluster based on their functional annotation. We added batch as a blocking factor to the model. The block argument works for all effect sizes shown above and is robust to differences in the log-fold changes or variance between batches. However, it assumes that each pair of clusters is present in at least one batch. In scenarios where cells from two clusters never co-occur in the same batch, the associated pairwise comparison will be impossible and is ignored during calculation of summary statistics.
+
+```{r score-marker-genes, eval = FALSE}
+marker_info <- list()
+
+if(!exists('sce_comb'))
+  sce_comb <- readRDS(file.path(params$output_dir, 'sce_integrated.rds'))
+if(!exists('sr_immgen'))
+  sr_immgen <- readRDS(file.path(params$output_dir, 'SingleR_ImmGenData_annotation.rds'))
+
+
+# Add cell type annotation
+for(i in colData(sce_comb) %>% names %>% grep("^celltype", ., value = T)) {
+  colData(sce_comb)[[i]] <- NULL
+}
+
+colData(sce_comb) %<>% data.frame %>%
+  mutate(cluster_mnn = as.character(cluster_mnn)) %>%
+  left_join(sr_immgen$pred_cluster_simplified) %>%
+  mutate(cluster_mnn = factor(cluster_mnn)) %>%
+  DataFrame
+
+colData(sce_comb) %<>% data.frame %>%
+  mutate(cluster_mnn = as.character(cluster_mnn)) %>%
+  left_join(sr_immgen$pred_cluster_fine_simplified) %>%
+  mutate(cluster_mnn = factor(cluster_mnn)) %>%
+  DataFrame
+
+
+# Cluster markers
+marker_info$cluster_markers <- scoreMarkers(
+  sce_comb, 
+  groups = sce_comb$cluster_mnn, 
+  block = sce_comb$batch,
+  lfc=1, 
+  full.stats=TRUE,
+  row.data=rowData(sce_comb)[,c('gene_name', 'is.mito', 'is.ribo'),drop=FALSE], 
+  BPPARAM=BiocParallel::MulticoreParam(params$ncores, RNGseed=use_seed)
+)
+
+
+# Cell type markers
+marker_info$celltype_cluster_markers <- scoreMarkers(
+  sce_comb, 
+  groups = sce_comb$celltype_cluster_pruned.labels, 
+  block = sce_comb$batch,
+  lfc=1, 
+  full.stats=TRUE,
+  row.data=rowData(sce_comb)[,c('gene_name', 'is.mito', 'is.ribo'),drop=FALSE], 
+  BPPARAM=BiocParallel::MulticoreParam(params$ncores, RNGseed=use_seed)
+)
+
+# Cell type markers
+marker_info$celltype_cluster_fine_markers <- scoreMarkers(
+  sce_comb, 
+  groups = sce_comb$celltype_cluster_pruned_fine.labels, 
+  block = sce_comb$batch,
+  lfc=1, 
+  full.stats=TRUE,
+  row.data=rowData(sce_comb)[,c('gene_name', 'is.mito', 'is.ribo'),drop=FALSE], 
+  BPPARAM=BiocParallel::MulticoreParam(params$ncores, RNGseed=use_seed)
+)
+
+
+saveRDS(marker_info, file.path(params$output_dir, 'scoreMarkers.rds'))
+```
+
+
+### Macrophage markers from literature
+
+#### Li et al. (2022)
+[Link to publication](https://www.science.org/doi/10.1126/sciimmunol.abj5761?url_ver=Z39.88-2003&rfr_id=ori:rid:crossref.org&rfr_dat=cr_pub%20%200pubmed)
+```{r ma-mk-li, eval = FALSE}
+ma_mk_files <- list.files('./data/resources/macrophage_markers/li_sciimmunol_2022', 
+                         full.names = T)
+
+ma_mk_li <- foreach(i = ma_mk_files) %do% {
+  read_tsv(i, col_names = F, show_col_types = F) %>% pull(X1)
+}
+names(ma_mk_li) <- ma_mk_files %>% basename %>% gsub("scRNA.top50.|topDEgenes.|.txt", "", .)
+```
+
+#### Guilliams et al. (2022)
+[Link to publication](https://www.sciencedirect.com/science/article/pii/S0092867421014811?via%3Dihub)
+```{r ma-mk-guilliams, eval = FALSE}
+
+# Suppl. table 1 : DEGs using all cell types
+read_sheets <- c(
+  cDC2 = 'Mouse cDC2 DEGs',
+  `Migratory cDCs` = 'Mouse Mig. cDCs DEGs',
+  Monocyte = 'Mouse Monocyte DEGs',
+  pDCs = 'Mouse pDCs DEGs',
+  cDC1 = 'Mouse cDC1 DEGs',
+  KC = 'Mouse KC DEGs'
+)
+
+ma_mk_guilliams_all<- foreach(i = read_sheets) %do% {
+  read.xlsx(
+  file.path('data/resources/macrophage_markers/guilliams_cell_2022', 
+            '1-s2.0-S0092867421014811-mmc1.xlsx'),
+  sheet = i
+  ) %>% 
+    pull(X1)
+}
+
+names(ma_mk_guilliams_all) <- names(read_sheets)
+
+# Suppl. table 2 : DEGs using myeloid cell types
+read_sheets <- c(
+  cDC1 = 'Mouse cDC1 DEGs',
+  cDC2 = 'Mouse cDC2 DEGs',
+  `Migratory cDCs` = 'Mouse Mig. cDC DEGs',
+  Monocyte = 'Mouse Monocyte DEGs',
+  `Patrolling Monocytes` = 'Mouse Pat. Monocyte DEGs',
+  `Peritoneal Macrophages` = 'Mouse Peri Mac DEGs',
+  KC = 'Mouse KC DEGs',
+  `Transient Monocytes 10` = 'Mouse Trans. mono (cl.10) DEGs',
+  `Transient Monocytes 11` = 'Mouse Trans. Mono (cl.11) DEGs'
+)
+
+ma_mk_guilliams_myeloid <- foreach(i = read_sheets) %do% {
+  read.xlsx(
+  file.path('data/resources/macrophage_markers/guilliams_cell_2022', 
+            '1-s2.0-S0092867421014811-mmc2.xlsx'),
+  sheet = i
+  ) %>% 
+    pull(X1)
+}
+
+names(ma_mk_guilliams_myeloid) <- names(read_sheets)
+```
+
+
+#### Run GSVA
+```{r ma-mk-gsva, eval = FALSE}
+if(!exists('sce_comb'))
+  sce_comb <- readRDS(file.path(params$output_dir, 'sce_integrated.rds'))
+
+# generate a unique list of markers
+l1 <- ma_mk_li
+names(l1) <- paste('Li', names(l1))
+
+l2 <- ma_mk_guilliams_myeloid
+names(l2) <- paste('Guilliams', names(l2))
+
+gsets_list <- c(l1, l2)
+
+# Subset sce
+use_rows <- rownames(sce_comb) %in% (gsets_list %>% unlist %>% unique)
+
+# Run GSVA
+gsva_res <- gsva(assay(sce_comb[use_rows, ], 'counts'), 
+                 method = 'gsva',
+                 gset.idx.list = gsets_list,
+                 min.sz = 10,
+                 max.sz = 500,
+                 kcdf = "Poisson",
+                 mx.diff = FALSE, # set to false as in https://www.bioconductor.org/packages/release/bioc/vignettes/GSVA/inst/doc/GSVA.html#61_Molecular_signature_identification
+                 verbose = TRUE,
+                 BPPARAM=BiocParallel::MulticoreParam(params$ncores, RNGseed=use_seed)
+                 )
+saveRDS(gsva_res,  file.path(params$output_dir, 'ma_mk_gsva.rds'))
+```
+
+
+
+### Load data
+```{r load-data}
+sce_comb <- readRDS(file.path(params$output_dir, 'sce_integrated.rds'))
+sce_mnn <- readRDS(file.path(params$output_dir, 'sce_mnn.rds'))
+score_markers <- readRDS(file.path(params$output_dir, 'scoreMarkers.rds'))
+sr_immgen <- readRDS(file.path(params$output_dir, 'SingleR_ImmGenData_annotation.rds'))
+
+# Add cell type annotation
+for(i in colData(sce_comb) %>% names %>% grep("^celltype.*cluster.*", ., value = T)) {
+  colData(sce_comb)[[i]] <- NULL
+}
+colData(sce_comb) %<>% data.frame %>%
+  mutate(cluster_mnn = as.character(cluster_mnn)) %>%
+  left_join(sr_immgen$pred_cluster_simplified) %>%
+  mutate(cluster_mnn = factor(cluster_mnn)) %>%
+  DataFrame
+
+colData(sce_comb) %<>% data.frame %>%
+  mutate(cluster_mnn = as.character(cluster_mnn)) %>%
+  left_join(sr_immgen$pred_cluster_fine_simplified) %>%
+  mutate(cluster_mnn = factor(cluster_mnn)) %>%
+  DataFrame
+
+# Cluster MNN levels
+cl_levels_sort <- sce_comb$cluster_mnn %>% as.character %>% as.numeric %>% unique %>% sort %>% as.character()
+cl_levels_rev <- sce_comb$cluster_mnn %>% as.character %>% as.numeric %>% unique %>% sort(decreasing = TRUE) %>% as.character()
+sce_comb$cluster_mnn %<>% as.character %>% factor(levels = cl_levels_sort)
+sce_comb$cluster_mnn_rev <- sce_comb$cluster_mnn %>% as.character %>% factor(levels = cl_levels_rev)
+
+# Site levels order
+site_caps_ord <- c('Primary tumor', 'Liver', 'Lung')
+site_ord <- c('primary_tumor', 'liver', 'lung')
+
+# Add new colData vars
+colData(sce_comb) <- colData(sce_comb) %>% data.frame %>% 
+  mutate(
+    site_caps = ifelse(site == 'liver', 'Liver', site),
+    site_caps = ifelse(site == 'lung', 'Lung', site_caps),
+    site_caps = ifelse(site == 'primary_tumor', 'Primary tumor', site_caps),
+    site = factor(site, levels = site_ord),
+    site_caps = factor(site_caps, levels = site_caps_ord)
+  ) %>% 
+  DataFrame
+
+# Coordinate colData between sce_comb and sce_mnn
+colData(sce_mnn) <- colData(sce_comb)
+assay(sce_mnn, 'logcounts') <- logcounts(sce_comb[rownames(sce_mnn),])
+```
+
+
+## Macrophage signatures from different sources
+Configuration
+```{r mfa-signatures-conf}
+use_markers <- list(
+  `General Macrophages` = c(
+    `F4-80` = 'Adgre1', CD64 = 'Fcgr1', CD11b = 'Itgam'
+  ),
+  `Alveolar macrophages` = c(
+    'Pparg','Car4','Gal','Ear2','Perp','Plet1','Siglecf','F7','Cidec','Krt79',
+    `Siglec-F` = 'Siglecf'
+  ),
+  `Other alveolar macrophages` = c(
+    'Igflr1', 'Patj', 'Vkorc1', 'Noct', 'Pnpl7', 'Pnpl8', 'Nod1', 'Card11', 'Dmxl2', 
+    'Mtmr7', 'Slc39a1', 'Cpne5', 'Adcy3', 'Ucp3', 'Fam89a', 'Mcoln3', 'Snx10', 
+    'Atxn10', 'Anxa2', 'Runx1'
+  ),
+  `Lung infiltrating macrophages` = c(
+    'Pram1', 'Itgb2l', 'Clec5a', 'Mmp9', 'Tmem123', 'Fgf2', 'Ipcef1', 'Mettl9', 
+    'Fgf2', 'Abtb1'
+  ),
+  `Liver infiltrating macrophages` = c(
+    'F8', 'Jam2', 'Btnl9', 'Gzmc', 'Tek', 'Ston1', 
+    'Hecw2', 'Bace2', 'Arrb1', 'Eng', 'Tbrg1'
+  ),
+  `Kupfer cells` = c(
+    'Cyp3a25', 'Clac4f', 'Cyp2c37', 'Vsig4', 'Slc38a4', 'Gc', 'Timd4', 'Hrg', 
+    'St3gal5', 'Slc27a6', 'Apoa5', 'Cd207', 'Gldc', Cd51 = 'Itgav', 'Slc27a5', 'Asgr1', 
+    'C4bp', 'Apoa2', 'Clec4e', 'Cd5l', 'Kcna2', 'Il18', 'Marco', 'Ndst3', 
+    'Timd4', 'Vsig4', 'Itgal'
+  )
+)
+
+# select only those genes in SCE
+use_markers <- map(use_markers, \(x) intersect(x, rownames(sce_comb)))
+
+use_markers_df <- data.frame(
+  cell_type = rep(names(use_markers), map(use_markers, length)),
+  gene = unlist(use_markers)
+)
+```
+
+### Average expression by cluster
+```{r mfa-signatures-cl-dotplot, fig.width = 7.2, fig.asp = 1.6}
+use_sce <- sce_comb[use_markers_df$gene,]
+assay(use_sce, 'expressed') <- assay(use_sce, 'counts') > 1
+
+# Z-score
+avg_sce <- aggregateAcrossCells(
+  use_sce,
+  statistics = 'mean',
+  id=sce_comb$cluster_mnn,
+  use.assay.type = "logcounts")
+
+zmat <- t(apply(assay(avg_sce, 'logcounts'), 1, scale, center = TRUE, scale = TRUE))
+colnames(zmat) <- colnames(avg_sce)
+zmat[is.na(zmat)] <- 0
+
+cols_hclust <- hclust(dist(t(zmat)))
+cols_hclust_labels <- cols_hclust$labels[cols_hclust$order]
+
+z_expr_df <- zmat %>% 
+  data.frame(check.names = F) %>% 
+  rownames_to_column('gene') %>% 
+  pivot_longer(-gene, names_to = 'group', values_to = 'exprs') %>% 
+  mutate(group = factor(group, levels = cols_hclust_labels))
+
+# Proportion of expression
+prop_sce <-summarizeAssayByGroup(
+  assay(use_sce, 'counts'),
+  ids = use_sce$cluster_mnn,
+  statistics = 'prop.detected'
+)
+
+prop_expr_df <- assay(prop_sce, 'prop.detected') %>% 
+  data.frame(check.names = F) %>% 
+  rownames_to_column('gene') %>% 
+  pivot_longer(-gene, names_to = 'group', values_to = 'prop') %>% 
+  mutate(group = factor(group, levels = cols_hclust_labels))
+
+
+# Merged data
+use_data <- full_join(z_expr_df, prop_expr_df) %>% 
+  left_join(use_markers_df)
+
+# Plot
+use_data %>% 
+  mutate(
+    exprs = ifelse(exprs > 2, 2, exprs),
+    exprs = ifelse(exprs < -2, -2, exprs)
+  ) %>% 
+  ggplot(aes(group, gene, size = prop, color = exprs)) +
+  geom_point() +
+  scale_color_distiller(palette = 'RdBu') +
+  facet_grid(rows = vars(cell_type), scales = 'free', space = 'free') +
+  theme(
+    # axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1),
+    axis.ticks.y=element_blank(),
+    axis.ticks.x=element_blank(),
+    panel.border = element_rect(colour = "black", size=0.5),
+    panel.grid.major.x = element_line(linewidth = 0.2, colour="grey60", linetype = 'dashed'),
+    strip.background = element_blank(),
+    strip.text.y = element_text(angle = 0)
+  ) +
+  scale_x_discrete(position = "top") +
+  labs(
+    x = 'Cluster',
+    y = '',
+    color = 'Z-score\nMean expression', 
+    size = 'Proportion\ncells'
+  )
+
+# expr_sce <- aggregateAcrossCells(
+#   use_sce,
+#   statistics = 'mean',
+#   id=sce_comb$cluster_mnn,
+#   use.assay.type = "logcounts")
+# 
+# summarizeAssayByGroup(
+#   assay(use_sce, 'logcounts'),
+#   ids = use_sce$cluster_mnn,
+#   statistics = 'mean'
+# )
+# 
+# 
+# 
+# summed <- aggregateAcrossCells(
+#   use_sce,
+#   id=sce_comb$cluster_mnn,
+#   use.assay.type = "logcounts")
+# 
+# 
+# heat_values <- t(apply(assay(summed, 'logcounts'), 1, scale, center = TRUE, scale = TRUE))
+# colnames(heat_values) <- colnames(summed)
+# heat_values[is.na(heat_values)] <- 0
+# 
+# Heatmap(
+#   heat_values, 
+#   column_title = "Cluster",
+#   column_title_side = "bottom",
+#   row_split = use_markers_df$cell_type,
+#   row_title_rot = 0,
+#   row_gap = unit(2, "mm"),
+#   show_row_dend = FALSE
+#   )
+```
+
+
+### Average expression by site
+```{r mfa-signatures-site-dotplot-conf}
+use_sce <- sce_comb[use_markers_df$gene,]
+assay(use_sce, 'expressed') <- assay(use_sce, 'counts') > 1
+
+# Z-score
+avg_sce <- aggregateAcrossCells(
+  use_sce,
+  statistics = 'mean',
+  id=sce_comb$site_caps,
+  use.assay.type = "logcounts")
+
+zmat <- t(apply(assay(avg_sce, 'logcounts'), 1, scale, center = TRUE, scale = TRUE))
+colnames(zmat) <- colnames(avg_sce)
+zmat[is.na(zmat)] <- 0
+
+z_expr_df <- zmat %>% 
+  data.frame(check.names = F) %>% 
+  rownames_to_column('gene') %>% 
+  pivot_longer(-gene, names_to = 'group', values_to = 'exprs') 
+
+# Proportion of expression
+prop_sce <-summarizeAssayByGroup(
+  assay(use_sce, 'counts'),
+  ids = use_sce$site_caps,
+  statistics = 'prop.detected'
+)
+
+prop_expr_df <- assay(prop_sce, 'prop.detected') %>% 
+  data.frame(check.names = F) %>% 
+  rownames_to_column('gene') %>% 
+  pivot_longer(-gene, names_to = 'group', values_to = 'prop') 
+
+# Merged data
+use_data <- full_join(z_expr_df, prop_expr_df) %>% 
+  left_join(use_markers_df)
+
+# Change cell type names
+use_data$cell_type <- gsub(" ", "\n", use_data$cell_type)
+
+# Plot
+res_plot <- use_data %>% 
+  mutate(
+    exprs = ifelse(exprs > 2, 2, exprs),
+    exprs = ifelse(exprs < -2, -2, exprs),
+    group = factor(group, levels = rev(c('Primary tumor', 'Liver', 'Lung')))
+  ) %>% 
+  ggplot(aes(gene, group, 
+             size = prop, 
+             fill = exprs)) +
+  geom_point(pch = 21, color = 'black') +
+  # scale_fill_distiller(palette = 'RdBu') +
+  scale_fill_gradient2(low = "dodgerblue3", mid = "white", high = "firebrick3") +
+  scale_size(
+    limits=c(0, max(use_data$prop)),
+    range = c(1, 4)
+    ) +
+  scale_x_discrete(guide = guide_axis(angle = 45)) +
+  facet_grid(cols = vars(cell_type), scales = 'free', space = 'free') +
+  theme(
+    axis.ticks.y=element_blank(),
+    panel.border = element_rect(colour = "black", linewidth=0.5),
+    strip.background = element_blank(),
+    strip.text.x = element_text(angle = 90, hjust = 0)
+  ) +
+  labs(
+    x = '',
+    y = '',
+    fill = 'Z-score\nMean expression', 
+    size = 'Proportion\ncells'
+  )
+
+```
+
+```{r mfa-signatures-site-dotplot, fig.dim = c(11.12, 2.096)}
+res_plot + theme( legend.position = "none")
+```
+
+```{r mfa-signatures-site-dotplot-legend, fig.asp = 0.8}
+legend <- cowplot::get_legend(res_plot)
+grid.newpage()
+grid.draw(legend)
+```
+
+
+
+
+```{r mfa-signatures-site-heatmap, fig.width = 5.2, fig.asp = 3, eval = FALSE}
+summed <- aggregateAcrossCells(
+  sce_comb[use_markers_df$gene,],
+  id=sce_comb$site,
+  use.assay.type = "logcounts")
+
+heat_values <- t(apply(assay(summed, 'logcounts'), 1, scale, center = TRUE, scale = TRUE))
+colnames(heat_values) <- colnames(summed)
+heat_values[is.na(heat_values)] <- 0
+
+Heatmap(
+  heat_values, 
+  column_title = "",
+  row_split = use_markers_df$cell_type,
+  row_title_rot = 0,
+  row_gap = unit(2, "mm"),
+  show_row_dend = FALSE,
+  cluster_columns = FALSE
+  )
+```
+

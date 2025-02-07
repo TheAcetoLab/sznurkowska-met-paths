@@ -1,0 +1,514 @@
+---
+title: "p26532_o26674 10x RNA-seq analysis of BR16 cancer"
+subtitle: "Demultiplexing with hashtag oligos (HTOs)"
+author: "Francesc Castro-Giner"
+date: '`r format(Sys.Date(), "%B %d, %Y")`'
+output: workflowr::wflow_html
+editor_options:
+  chunk_output_type: console
+params:
+  date: '`r format(Sys.Date(), "%B %d, %Y")`'
+  cellranger_count_dir: ./data/rnaseq/p26532_o26674/pipelines/cellranger_count
+  sample_annot: ./data/rnaseq/p26532_o26674/rawdata/samples.csv
+  ncores: 8
+---
+
+## Load libraries, additional functions and data
+
+Setup environment
+
+```{r setup, include=TRUE, warning=FALSE, message=FALSE}
+knitr::opts_chunk$set(results='asis', echo=TRUE, message=FALSE, warning=FALSE, error=FALSE, fig.align = 'center', fig.width = 3.5, fig.asp = 0.618, dpi = 600, dev = c("png", "pdf"))
+
+options(stringsAsFactors = FALSE)
+
+set.seed(1011110)
+```
+
+Load packages
+
+```{r load-libraries}
+library(tidyverse)
+library(showtext)
+library(foreach)
+library(DT)
+library(knitr)
+library(kableExtra)
+library(cowplot)
+library(colorblindr)
+library(ggbeeswarm)
+library(arsenal)
+
+library(scater)
+library(DropletUtils)
+library(Seurat)
+library(scran)
+library(scDblFinder)
+library(BiocSingular)
+
+# library(ComplexHeatmap)
+# library(circlize)
+# library(RColorBrewer)
+# library(DT)
+```
+
+Load ggplot theme
+
+```{r ggplot-theme}
+source("./configuration/rmarkdown/ggplot_theme.R")
+```
+
+Clean files generated in previous runs
+```{r clean-files}
+rmd_file <- current_input()
+if(!is.null(rmd_file)) {
+  figures_dir <- file.path('./docs/figure',rmd_file)
+  if(dir.exists(figures_dir)) {
+    unlink(file.path(figures_dir, "*"))
+  }
+}
+
+```
+
+## Introduction
+
+## Description
+
+## Data wrangling
+
+Load SCE file information
+```{r list-sce}
+# Load files, using system instead of list.files for speed reasons
+sce_files <- system(paste("find", params$cellranger_count_dir, "-maxdepth 2 -type f -regex '.*/sce[.]rds$'"), intern = TRUE) %>% sort
+names(sce_files) <- sce_files %>% dirname %>% basename
+# Select only liver, lung and primary tumor batches
+sce_files <- sce_files[grep('Liver|Lungs|Tum', names(sce_files))]
+```
+
+Load perCellQCMetrics from SCE files
+```{r load-perCellQCMetrics}
+use_sce_file <- sce_files[1]
+cell_qc_metrics <- foreach(use_sce_file = sce_files, .combine = rbind) %do% {
+  sce <- readRDS(use_sce_file)
+  colData(sce)
+} %>% data.frame
+rm(sce)
+```
+
+
+## Quality control (by batch)
+
+### Selected QC metrics
+
+We identify low-quality cells using the following QC metrics :
+
+-   Library size : the total sum of UMI counts across all relevant features. Cells with small library sizes are of low quality as the RNA has been lost at some point during library preparation.
+-   Number of detected features : number of genes with non-zero counts for that cell. Any cell with very few expressed genes is likely to be of poor quality as the diverse transcript population has not been successfully captured.
+-   Proportion of mitochondrial genes : High proportions are indicative of poor-quality cells (Islam et al. 2014; Ilicic et al. 2016), presumably because of the loss of cytoplasmic RNA from perforated cells.
+
+### Detect low quality cells
+
+We use adaptive thresholds for each selected QC metrics. This assumes that most of the dataset consists of high quality cells and identify cells that are outliers for the selected QC metrics based on the median absolute deviation (MAD) from the median value of each metric across all cells. By default, we consider a value to be an outlier if it is more than 3 MADs from the median in the "problematic" direction. This is loosely motivated by the fact that such a filter will retain 99% of non-outlier values that follow a normal distribution.
+
+In cases were multiple batches are involved, each with different sequencing coverage, we should consider to apply the adaptive threshold to each batch separately. That said, the use of batch= involves the stronger assumption that most cells in each batch are of high quality. If an entire batch failed, outlier detection will not be able to act as an appropriate QC filter for that batch. In such cases, it is better to compute a shared median and MAD from the other batches and use those estimates to obtain an appropriate filter threshold for cells in the problematic batches.
+
+```{r qc-metrics-batch}
+discard_reasons <-  perCellQCFilters(
+  cell_qc_metrics,
+  sum.field = "sum",
+  detected.field = "detected",
+  sub.fields = c("subsets_Mito_percent"),
+  batch=cell_qc_metrics$Sample,
+  nmads = 3
+)
+cell_qc_metrics <- cbind(dplyr::select(cell_qc_metrics, Sample:total), discard_reasons)
+
+thresholds <- cbind(
+  `Library size` = attr(discard_reasons$low_lib_size, "thresholds")['lower',],
+  `Number of detected features size` = attr(discard_reasons$low_n_features, "thresholds")['lower',],
+  `Mitochondrial proportion` = attr(discard_reasons$high_subsets_Mito_percent, "thresholds")['higher',]
+) %>% data.frame(check.names = FALSE) %>% rownames_to_column('Sample')
+
+res <- rbind(
+  c(`Reason` = 'Low library size', `Number of cells` = sum(discard_reasons$low_lib_size)),
+  c(`Reason` = 'Low number of detected features size', `Number of cells` = sum(discard_reasons$low_n_features)),
+  c(`Reason` = 'High mitochondrial proportion', `Number of cells` = sum(discard_reasons$high_subsets_Mito_percent)),
+  c(`Reason` = 'Total removed', `Number of cells` = sum(discard_reasons$discard)),
+  c(`Reason` = 'Cells remaining', `Number of cells` = sum(!discard_reasons$discard))
+) %>% data.frame(check.names = FALSE) %>% 
+  mutate(
+    `Number of cells` = as.numeric(`Number of cells`),
+    `Percentage of cells` = round(100*(`Number of cells` / nrow(cell_qc_metrics)), 2)
+  ) %>% 
+  dplyr::select(Reason, `Number of cells`, `Percentage of cells`)
+
+
+res %>%
+  kbl(caption = 'Number of cells removed') %>%
+  kable_paper(bootstrap_options = c("striped", "hover", "condensed"), full_width = F)
+
+```
+
+```{r qc-metrics-thresholds-per-batch}
+tab1 <- tableby(Sample ~ low_lib_size + low_n_features + high_subsets_Mito_percent + discard, data=cell_qc_metrics)
+mylabels <- list(low_lib_size = "Low UMI counts", low_n_features = "Low number of detected features size", high_subsets_Mito_percent = "High mitochondrial proportion", discard = "Total removed")
+sum_tab <- summary(tab1, labelTranslations = mylabels, cat.simplify=TRUE) %>% as.data.frame
+colnames(sum_tab)[1] <- 'var'
+sum_tab <- sum_tab %>% column_to_rownames('var') %>% t()
+sum_tab %>%
+  kbl(caption = 'Number of cells removed per sample') %>%
+  kable_paper(bootstrap_options = c("striped", "hover", "condensed"), full_width = F)
+```
+
+```{r qc-metrics-per-batch}
+thresholds %>%
+  kbl(caption = 'Thresholds applied by batch') %>%
+  kable_paper(bootstrap_options = c("striped", "hover", "condensed"), full_width = F)
+```
+
+```{r qc-stats-per-batch}
+tab_all <- cell_qc_metrics %>% 
+  group_by(Sample) %>% 
+  summarise(`Library size` = median(sum), `Number of detected features` = median(detected), `Mitochondrial proportion` = median(subsets_Mito_percent))
+tab_pass <- cell_qc_metrics %>% 
+  filter(!discard) %>% 
+  group_by(Sample) %>% 
+  summarise(`Library size` = median(sum), `Number of detected features` = median(detected), `Mitochondrial proportion` = median(subsets_Mito_percent))
+
+tab_full <- full_join(tab_all, tab_pass, by = 'Sample')
+
+colnames(tab_full) <- colnames(tab_full) %>% gsub("\\.[xy]", "", .)
+
+tab_full %>%
+  kbl(caption = 'Median values for each quality metric') %>%
+  kable_paper(bootstrap_options = c("striped", "hover", "condensed"), full_width = F) %>%
+  add_header_above(c(" ", "All cells" = 3, "Filtered" = 3))
+```
+
+### Tresholds
+
+```{r qc-metrics-per-batch-2}
+thresholds %>%
+  kbl(caption = 'Thresholds applied by batch') %>%
+  kable_paper(bootstrap_options = c("striped", "hover", "condensed"), full_width = F)
+```
+
+```{r qc-metrics-batch-fig-thrs, fig.width=7.2, fig.asp=1, eval = FALSE}
+thresholds %>% 
+  pivot_longer(-Sample, values_to = 'Threshold') %>% 
+  ggplot(aes(Sample, Threshold)) +
+  geom_col() +
+  facet_wrap(vars(name), ncol = 1, scales = 'free_y') +
+  theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1)) +
+  labs(
+    x = '',
+    title = 'Thresholds applied by batch'
+  )
+```
+
+
+
+### Diagnostic plots
+
+```{r qc-metrics-fig-sum, fig.width=7.2, fig.asp=1}
+cell_qc_metrics %>% 
+  arrange(discard) %>% 
+  ggplot(aes(Sample, sum, color = discard)) + 
+  geom_violin(colour = "gray60", alpha = 0.2, scale = "width", width = 0.8) + 
+  geom_quasirandom(width=0.4, groupOnX=TRUE, bandwidth=1, size = 1, alpha = 0.4) +
+  # geom_hline(yintercept = attr(discard_reasons$low_lib_size, "thresholds")[['lower']], lty = 3) + 
+  scale_color_OkabeIto(order = c(2, 1)) +
+  scale_y_log10() +
+  theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1)) +
+  labs(
+    x = '',
+    y = 'UMIs counts',
+    title = 'Number of UMIs'
+  )
+```
+
+```{r qc-metrics-fig-detected, fig.width=7.2, fig.asp=1}
+cell_qc_metrics %>% 
+  arrange(discard) %>% 
+  ggplot(aes(Sample, detected, color = discard)) + 
+  geom_violin(colour = "gray60", alpha = 0.2, scale = "width", width = 0.8) + 
+  geom_quasirandom(width=0.4, groupOnX=TRUE, bandwidth=1, size = 1, alpha = 0.4) +
+  # geom_hline(yintercept = attr(discard_reasons$low_n_features, "thresholds")[['lower']], lty = 3) + 
+  scale_color_OkabeIto(order = c(2, 1)) +
+  scale_y_log10() +
+  theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1)) +
+  labs(
+    x = '',
+    y = 'Detected features',
+    title = 'Number of genes'
+  )
+```
+
+```{r qc-metrics-fig-subsets_Mito_percent, fig.width=7.2, fig.asp=1}
+cell_qc_metrics %>% 
+  arrange(discard) %>% 
+  ggplot(aes(Sample, subsets_Mito_percent, color = discard)) + 
+  geom_violin(colour = "gray60", alpha = 0.2, scale = "width", width = 0.8) + 
+  geom_quasirandom(width=0.4, groupOnX=TRUE, bandwidth=1, size = 1, alpha = 0.4) +
+  # geom_hline(yintercept = attr(discard_reasons$high_subsets_Mito_percent, "thresholds")[['higher']], lty = 3) + 
+  scale_color_OkabeIto(order = c(2, 1)) +
+  theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1)) +
+  labs(
+    x = '',
+    y = 'Percentage of mitochondrial genes',
+    title = 'Mitochondrial proportion'
+  )
+```
+
+```{r qc-metrics-fig-subsets_Ribo_percent, fig.width=7.2, fig.asp=1}
+cell_qc_metrics %>% 
+  arrange(discard) %>% 
+  ggplot(aes(Sample, subsets_Ribo_percent, color = discard)) + 
+  geom_violin(colour = "gray60", alpha = 0.2, scale = "width", width = 0.8) + 
+  geom_quasirandom(width=0.4, groupOnX=TRUE, bandwidth=1, size = 1, alpha = 0.4) +
+  scale_color_OkabeIto(order = c(2, 1)) +
+  theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1)) +
+  labs(
+    x = '',
+    y = 'Percentage of ribosomal genes',
+    title = 'Ribosomal proportion'
+  )
+```
+
+```{r qc-metrics-fig-sum_vs_mito}
+cell_qc_metrics %>% 
+  # arrange(discard) %>% 
+  ggplot(aes(sum, subsets_Mito_percent, color = discard)) + 
+  geom_point(alpha = 0.3, size = 1) +
+  scale_color_OkabeIto(order = c(2, 1)) +
+  labs(
+    x = 'UMIs counts',
+    y = 'Percentage of mitochondrial genes'
+  )
+```
+
+```{r qc-metrics-fig-detected_vs_mito}
+cell_qc_metrics %>% 
+  # arrange(discard) %>% 
+  ggplot(aes(detected, subsets_Mito_percent, color = discard)) + 
+  geom_point(alpha = 0.3, size = 1) +
+  scale_color_OkabeIto(order = c(2, 1)) +
+  labs(
+    x = 'Detected features',
+    y = 'Percentage of mitochondrial genes'
+  )
+```
+
+```{r qc-metrics-fig-sum_vs_detected}
+cell_qc_metrics %>% 
+  # arrange(discard) %>% 
+  ggplot(aes(sum, detected, color = discard)) + 
+  geom_point(alpha = 0.3, size = 1) +
+  scale_color_OkabeIto(order = c(2, 1)) +
+  labs(
+    x = 'UMIs counts',
+    y = 'Detected features'
+  ) + 
+  geom_smooth()
+
+```
+
+
+
+
+### Remove cells
+```{r qc-metrics-remove-cells}
+use_sce_file <- sce_files[1]
+r.rm <- foreach(use_sce_file = sce_files) %do% {
+  sce <- readRDS(use_sce_file)
+  filtered_sce_file <- gsub("sce.rds", "sce_filtered.rds", use_sce_file)
+  x <- colData(sce) %>% data.frame %>% left_join(cell_qc_metrics %>% dplyr::select(Sample, Barcode, discard))
+  # Add GFP and mCherry expression to colData
+  # colData(sce) <- cbind(data.frame(colData(sce)), counts(sce[c("GFP", "mCherry"),]) %>% as.matrix %>% t) %>% DataFrame()
+  sce <- sce[,!x$discard]
+  saveRDS(sce, filtered_sce_file)
+}
+rm(sce)
+sce_filtered_files <- system(paste("find", params$cellranger_count_dir, "-maxdepth 2 -type f -regex '.*/sce_filtered[.]rds$'"), intern = TRUE) %>% sort
+names(sce_filtered_files) <- names(sce_files)
+```
+
+
+## Combine batches and normalization
+Combine batches
+```{r combine-batches, eval = FALSE}
+sce <- readRDS(sce_files[1])
+sce <- sce[rowData(sce)$type == 'Gene Expression',]
+
+sce_file <- sce_files[2]
+for(sce_file in sce_files[-1]){
+  use_sce <- readRDS(sce_file)
+  use_sce <- use_sce[rowData(use_sce)$type == 'Gene Expression',]
+  new_counts <- cbind(counts(sce), counts(use_sce))
+  new_colData <- rbind(colData(sce), colData(use_sce))
+  sce <- SingleCellExperiment(
+    assays = list(counts = new_counts),
+    colData = new_colData,
+    rowData = rowData(sce)
+  )
+  rm(use_sce)
+}
+```
+
+Normalization usign scran
+```{r combine-batches-normalization, eval = FALSE}
+set.seed(100)
+clust.sce <- quickCluster(sce, BPPARAM=BiocParallel::MulticoreParam(4)) 
+sce <- computeSumFactors(sce, cluster=clust.sce, BPPARAM=BiocParallel::MulticoreParam(4))
+sce <- logNormCounts(sce)
+```
+
+We change SCE row names from ENSEMBL id to gene name
+```{r change-row-names, eval = FALSE}
+rownames(sce) <- make.names(rowData(sce)$gene_name, unique = TRUE)
+```
+
+Save combined and normalized SCE
+```{r combine-batches-save, eval = FALSE}
+saveRDS(sce, file.path(params$cellranger_count_dir, 'sce_combined.rds'))
+# sce <- readRDS(file.path(params$cellranger_count_dir, 'sce_combined.rds'))
+```
+
+
+
+### Diagnostic plots
+```{r}
+sce <- readRDS(file.path(params$cellranger_count_dir, 'sce_combined.rds'))
+sample_annot <- read_csv(params$sample_annot) %>% 
+  dplyr::select(sample_alias, sample_type) %>% 
+  dplyr::rename(Sample = sample_alias)
+cell_qc_metrics <- colData(sce) %>% data.frame %>% left_join(sample_annot)
+```
+
+
+#### By sample type
+```{r comb-qc-metrics-fig-sum, fig.width=7.2, fig.asp=1}
+cell_qc_metrics %>% 
+  ggplot(aes(Sample, sum, color = sample_type)) + 
+  geom_violin(colour = "gray60", alpha = 0.2, scale = "width", width = 0.8) + 
+  geom_quasirandom(width=0.4, groupOnX=TRUE, bandwidth=1, size = 1, alpha = 0.4) +
+  scale_color_OkabeIto(order = c(2, 1, 3)) +
+  scale_y_log10() +
+  theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1)) +
+  labs(
+    x = '',
+    y = 'UMIs counts',
+    title = 'Number of UMIs'
+  )
+```
+
+```{r comb-qc-metrics-fig-detected, fig.width=7.2, fig.asp=1}
+cell_qc_metrics %>% 
+  ggplot(aes(Sample, detected, color = sample_type)) + 
+  geom_violin(colour = "gray60", alpha = 0.2, scale = "width", width = 0.8) + 
+  geom_quasirandom(width=0.4, groupOnX=TRUE, bandwidth=1, size = 1, alpha = 0.4) +
+  scale_color_OkabeIto(order = c(2, 1, 3)) +
+  scale_y_log10() +
+  theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1)) +
+  labs(
+    x = '',
+    y = 'Detected features',
+    title = 'Number of genes'
+  )
+```
+
+```{r comb-qc-metrics-fig-subsets_Mito_percent, fig.width=7.2, fig.asp=1}
+cell_qc_metrics %>% 
+  ggplot(aes(Sample, subsets_Mito_percent, color = sample_type)) + 
+  geom_violin(colour = "gray60", alpha = 0.2, scale = "width", width = 0.8) + 
+  geom_quasirandom(width=0.4, groupOnX=TRUE, bandwidth=1, size = 1, alpha = 0.4) +
+  scale_color_OkabeIto(order = c(2, 1, 3)) +
+  theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1)) +
+  labs(
+    x = '',
+    y = 'Percentage of mitochondrial genes',
+    title = 'Mitochondrial proportion'
+  )
+
+```
+
+## Normalization, variance modelling and cell cycle annotation
+
+Here we perform normalization using scran::quickCluster and dimensionality reduction at batch level.
+
+```{r normalization-dec, fig.width = 10.2, fig.asp=1}
+sce_dmxfiles <- system(paste("find", params$cellranger_count_dir, "-maxdepth 2 -type f -regex '.*/sce_filtered.rds$'"), intern = TRUE) %>% sort
+
+names(sce_dmxfiles) <-sce_dmxfiles %>% dirname %>% basename
+hs.pairs <- readRDS(system.file("exdata", "human_cycle_markers.rds", package="scran"))
+sce_sample_name <- names(sce_dmxfiles)[1]
+for(sce_sample_name in names(sce_dmxfiles)) {
+  cat("###", sce_sample_name, "\n\n") 
+  use_sce <- readRDS(sce_dmxfiles[[sce_sample_name]])
+  use_sce <- use_sce[rowData(use_sce)$type == 'Gene Expression',]
+  # Normalization
+  clust.sce <- quickCluster(use_sce, BPPARAM=BiocParallel::MulticoreParam(params$ncores)) 
+  use_sce <- computeSumFactors(use_sce, cluster=clust.sce, BPPARAM=BiocParallel::MulticoreParam(params$ncores))
+  use_sce <- logNormCounts(use_sce)
+  # Cell cycle assignment
+  rowData(use_sce)$ensembl_gene.version <- rownames(use_sce)
+  rowData(use_sce)$ensembl_gene <-  rowData(use_sce)$ensembl_gene.version %>% gsub("\\..*", "", .)
+  cc_assignments <- cyclone(use_sce, hs.pairs, gene.names=rowData(use_sce)$ensembl_gene, BPPARAM=BiocParallel::MulticoreParam(params$ncores))
+  use_sce$cell_cycle_phase <- cc_assignments$phases
+  colData(use_sce) <- cbind(colData(use_sce), cc_assignments$normalized.scores)
+  # Variance modelling
+  metadata(use_sce)$dec <- modelGeneVar(use_sce)
+  metadata(use_sce)$hvgs <- getTopHVGs(metadata(use_sce)$dec, prop = 0.1)
+  # Dimensionality reduction
+  use_sce <- runPCA(use_sce, subset_row=metadata(use_sce)$hvgs, ncomponents=25, BSPARAM=RandomParam(), BPPARAM=BiocParallel::MulticoreParam(params$ncores))
+  use_sce <- runTSNE(use_sce, dimred="PCA", BPPARAM=BiocParallel::MulticoreParam(params$ncores))
+  use_sce <- runUMAP(use_sce, dimred="PCA", BPPARAM=BiocParallel::MulticoreParam(params$ncores))
+  g <- buildSNNGraph(use_sce, k=10, use.dimred='PCA', BPPARAM=BiocParallel::MulticoreParam(params$ncores))
+  use_sce$cluster_id_batch <- igraph::cluster_walktrap(g)$membership %>% factor
+  
+  cat("#### TSNE\n\n") 
+  gridExtra::grid.arrange(
+    plotTSNE(use_sce, colour_by="cluster_id_batch", text_by="cluster_id_batch", point_alpha = 0.1) + 
+      guides(colour = guide_legend(override.aes = list(alpha = 1, size = 2))) + 
+      ggtitle("Cluster ID"),
+    # plotTSNE(use_sce, colour_by="site", point_alpha = 0.1) + 
+    #   guides(colour = guide_legend(override.aes = list(alpha = 1, size = 2))) + 
+    #   ggtitle("Site"),
+    plotTSNE(use_sce, colour_by="detected", point_alpha = 0.1) +
+      guides(colour = guide_legend(override.aes = list(alpha = 1, size = 2))) + 
+      ggtitle("Number of detected features"),
+    plotTSNE(use_sce, colour_by="subsets_Mito_detected", point_alpha = 0.1) + 
+      guides(colour = guide_legend(override.aes = list(alpha = 1, size = 2))) + 
+      ggtitle("Mitochondrial percentage"),
+    plotTSNE(use_sce, colour_by="cell_cycle_phase", point_alpha = 0.1) + 
+      guides(colour = guide_legend(override.aes = list(alpha = 1, size = 2))) + 
+      ggtitle("Cell cycle phase"),
+    ncol=2
+  )
+  cat("\n\n") 
+  
+  cat("#### UMAP\n\n") 
+  gridExtra::grid.arrange(
+    plotUMAP(use_sce, colour_by="cluster_id_batch", text_by="cluster_id_batch", point_alpha = 0.1) + 
+      guides(colour = guide_legend(override.aes = list(alpha = 1, size = 2))) + 
+      ggtitle("Cluster ID"),
+    # plotUMAP(use_sce, colour_by="site", point_alpha = 0.1) + 
+    #   guides(colour = guide_legend(override.aes = list(alpha = 1, size = 2))) + 
+    #   ggtitle("Site"),
+    plotUMAP(use_sce, colour_by="detected", point_alpha = 0.1) + 
+      guides(colour = guide_legend(override.aes = list(alpha = 1, size = 2))) + 
+      ggtitle("Number of detected features"),
+    plotUMAP(use_sce, colour_by="subsets_Mito_detected", point_alpha = 0.1) + 
+      guides(colour = guide_legend(override.aes = list(alpha = 1, size = 2))) + 
+      ggtitle("Mitochondrial percentage"),
+    plotUMAP(use_sce, colour_by="cell_cycle_phase", point_alpha = 0.1) + 
+      guides(colour = guide_legend(override.aes = list(alpha = 1, size = 2))) + 
+      ggtitle("Cell cycle phase"),
+    ncol=2
+  )
+  cat("\n\n") 
+  # Save filtered SCE
+  norm_sce_file <- gsub("sce_filtered.rds", "sce_normalized.rds", sce_dmxfiles[[sce_sample_name]])
+  saveRDS(use_sce, norm_sce_file)
+}
+```

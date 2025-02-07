@@ -1,0 +1,1577 @@
+---
+title: "p26532_o28268 10x RNA-seq analysis of cancer and microenvironment in tumor and mets"
+subtitle: "Analysis of cancer cells in primary tumor, lung and liver metastases"
+author: "Francesc Castro-Giner"
+date: '`r format(Sys.Date(), "%B %d, %Y")`'
+output: workflowr::wflow_html
+editor_options:
+  chunk_output_type: console
+params:
+  date: '`r format(Sys.Date(), "%B %d, %Y")`'
+  cellranger_count_dir: ./data/rnaseq/p26532_o28268/pipelines/cellranger_featurebarcodes
+  output_dir: ./output/p26532_o28268/p26532_o28268-10x_rnaseq-pll-cancer_cell
+  ncores: 6
+---
+
+## Load libraries, additional functions and data
+
+Setup environment
+```{r setup, include=TRUE, warning=FALSE, message=FALSE}
+knitr::opts_chunk$set(results='asis', echo=TRUE, message=FALSE, warning=FALSE, error=FALSE, fig.align = 'center', fig.width = 3.5, fig.asp = 0.618, dpi = 600, dev = c("png", "pdf"), fig.showtext = FALSE)
+
+options(stringsAsFactors = FALSE)
+
+use_seed <- 1100101
+set.seed(use_seed)
+
+if(!dir.exists(params$output_dir))
+  dir.create(params$output_dir, recursive = TRUE, showWarnings = FALSE)
+```
+
+Load packages
+```{r load-libraries}
+library(tidyverse)
+library(showtext)
+library(foreach)
+library(DT)
+library(knitr)
+library(kableExtra)
+library(cowplot)
+library(colorblindr)
+library(ggbeeswarm)
+library(arsenal)
+library(RColorBrewer)
+library(ggpubr)
+library(pheatmap)
+library(patchwork)
+library(openxlsx)
+library(magrittr)
+
+library(scater)
+library(DropletUtils)
+library(Seurat)
+library(scran)
+library(BiocSingular)
+library(batchelor)
+library(bluster)
+library(scDblFinder)
+library(speckle)
+library(miloR)
+library(ComplexHeatmap)
+library(clusterProfiler)
+library(GSVA)
+library(circlize)
+library(corrplot)
+library(factoextra)
+```
+
+
+Load ggplot theme
+```{r ggplot-theme}
+source("./configuration/rmarkdown/ggplot_theme.R")
+source("./configuration/rmarkdown/color_palettes.R")
+```
+
+Load custom functions
+```{r load-functions}
+source('./code/R-functions/gse_omnibus.r')
+source('./code/R-functions/gse_report.r')
+clean_msigdb_names <- function(x) x %>% gsub('REACTOME_', '', .) %>% gsub('WP_', '', .) %>% gsub('BIOCARTA_', '', .) %>% gsub('KEGG_', '', .) %>% gsub('PID_', '', .) %>% gsub('GOBP_', '', .) %>% gsub('_', ' ', .)
+source('./code/R-functions/pairwise_terms_jc.r')
+```
+
+Clean files generated in previous runs
+```{r clean-files}
+rmd_file <- current_input()
+if(!is.null(rmd_file)) {
+  figures_dir <- file.path('./docs/figure',rmd_file)
+  if(dir.exists(figures_dir)) {
+    unlink(file.path(figures_dir, "*"))
+  }
+}
+
+```
+
+## Data processing
+
+### Batch integration
+Here we prepare the data for batch correction (next section). First, we combine cells from all SCE objects into a single SCE and return pre-computed per-gene variance at batch level. Then we adjust for batch level library size. Returned object will contain log-normalized expression values after adjusting the size factors for systematic differences in coverage between
+
+```{r combine-sce, eval = FALSE}
+# File paths to SCE files
+sce_files <- system(paste("find", params$cellranger_count_dir, "-maxdepth 2 -type f -regex '.*/sce_normalized[.]rds$'"), intern = TRUE) %>% sort
+
+# Define list of anatomical sites to keep
+keep_sites <- c('liver', 'primary_tumor', 'lung')
+
+# Combine all SCE files into sce_comb and generate an combine gene  with pre-computed gene variance 
+if(exists('sce_comb')) 
+  rm(sce_comb)
+sce_file <-  sce_files[7]
+precomputed_geneVar <- foreach(sce_file = sce_files) %do% {
+  use_sce <- readRDS(sce_file)
+  # Select cancer cells
+  use_sce <- use_sce[,use_sce$cell_type == 'cancer_cell']
+  # Remove cells from anatomical sites not selected
+  use_sce <- use_sce[,use_sce$site %in% keep_sites]
+   
+  use_sce$cluster_id_batch <- as.character(use_sce$cluster_id_batch)
+  if(ncol(use_sce) == 0) {
+    NULL
+  } else {
+    # Combine sce
+    if(!exists('sce_comb')) {
+      sce_comb <- use_sce
+    } else {
+      new_counts <- cbind(counts(sce_comb), counts(use_sce))
+      new_logcounts <- cbind(logcounts(sce_comb), logcounts(use_sce))
+      new_colData <- rbind(colData(sce_comb), colData(use_sce))
+      sce_comb <- SingleCellExperiment(
+        assays = list(counts = new_counts, logcounts = new_logcounts),
+        colData = new_colData,
+        rowData = rowData(sce_comb)
+      )
+    }
+    metadata(use_sce)$dec
+  }
+}
+metadata(sce_comb)$precomputed_geneVar <- compact(precomputed_geneVar)
+rm(use_sce)
+
+# Modify coldata and rownames
+sce_comb$batch <-  gsub("_.*", "", sce_comb$Sample)
+sce_comb$cluster_id_batch <-  paste(sce_comb$batch, sce_comb$cluster_id_batch, sep = '_') %>% as.factor()
+
+rownames(sce_comb) <- make.names(rowData(sce_comb)$gene_name, unique = TRUE)
+
+# Rescale each batch to adjust for differences in sequencing depth between batches. The multiBatchNorm() function recomputes log-normalized expression values after adjusting the size factors for systematic differences in coverage between SingleCellExperiment objects. (Size factors only remove biases between cells within a single batch.) This improves the quality of the correction by removing one aspect of the technical differences between batches.
+sce_comb <- multiBatchNorm(sce_comb, batch = sce_comb$Sample, BPPARAM=BiocParallel::MulticoreParam(params$ncores, RNGseed=use_seed))
+
+# Identifying a set of HVGs using stats from all batches.
+combined_dec <- combineVar(metadata(sce_comb)$precomputed_geneVar)
+# combined_hvg <- getTopHVGs(combined_dec, n=5000, row.names = FALSE)
+chosen_hvgs <- combined_dec$bio > 0 & !rowData(sce_comb)$is.mito & !rowData(sce_comb)$is.ribo
+
+# Dimensionality reduction
+sce_comb <- runPCA(sce_comb, subset_row=chosen_hvgs, BSPARAM=BiocSingular::RandomParam(), BPPARAM=BiocParallel::MulticoreParam(params$ncores, RNGseed=use_seed))
+sce_comb$cluster_id  <- clusterCells(sce_comb, use.dimred="PCA", BLUSPARAM=SNNGraphParam(k=25, type="rank", cluster.fun="louvain", BPPARAM=BiocParallel::MulticoreParam(params$ncores, RNGseed=use_seed)))
+tab <- table(Cluster=sce_comb$cluster_id, Batch=sce_comb$Sample)
+sce_comb <- runTSNE(sce_comb, dimred="PCA", BPPARAM=BiocParallel::MulticoreParam(params$ncores, RNGseed=use_seed))
+sce_comb <- runUMAP(sce_comb, dimred="PCA", BPPARAM=BiocParallel::MulticoreParam(params$ncores, RNGseed=use_seed))
+
+saveRDS(sce_comb, file.path(params$output_dir, 'sce_integrated.rds'))
+```
+
+### Additional doublet detection
+[scDblFinder](https://github.com/plger/scDblFinder) : We suggest using the cluster-based approach when the datasets are segregated into clear clusters, and the random one for the rest (e.g. developmental trajectories).
+```{r scDblFinder, eval = FALSE}
+sce_comb <- scDblFinder(
+  sce_comb, 
+  samples =sce_comb$Sample, 
+  BPPARAM=BiocParallel::MulticoreParam(params$ncores/2, RNGseed=use_seed))
+
+saveRDS(sce_comb, file.path(params$output_dir, 'sce_integrated.rds'))
+```
+
+### Batch correction and dimensionality reduction
+
+Here, we actually perform the correction itself. We also perform the clustering.
+```{r batch-correction, eval = FALSE}
+if(!exists('sce_comb'))
+  sce_comb <- readRDS(file.path(params$output_dir, 'sce_integrated.rds'))
+
+# Remove previous clustering
+sce_comb$cluster_id <- NULL
+sce_comb$cluster_id_batch <- NULL
+
+# Remove genes for HVG
+mito_genes <- rownames(sce_comb)[rowData(sce_comb)$is.mito]
+ribo_genes <- rownames(sce_comb)[rowData(sce_comb)$is.ribo]
+use_genes <- rownames(sce_comb)[!rownames(sce_comb) %in% c(mito_genes, ribo_genes)]
+
+# Select HVG
+dec <- modelGeneVar(sce_comb[use_genes,], block = sce_comb$batch) 
+chosen_hvgs <- getTopHVGs(dec, fdr.threshold=0.05)
+
+# MNN correction
+sce_mnn <- fastMNN(sce_comb, 
+                       batch = sce_comb$batch, 
+                       auto.merge = TRUE, 
+                       subset.row=chosen_hvgs, 
+                       BSPARAM=RandomParam(deferred=TRUE), 
+                       BPPARAM=BiocParallel::MulticoreParam(params$ncores, RNGseed=use_seed),
+                       d=30, k=20)
+colData(sce_mnn) <- colData(sce_comb)
+reducedDim(sce_comb, 'corrected') <- reducedDim(sce_mnn, 'corrected')
+
+
+# Dimensionality reduction
+sce_mnn <- runUMAP(
+  sce_mnn, dimred="corrected", 
+  BPPARAM=BiocParallel::MulticoreParam(params$ncores, RNGseed=use_seed)
+)
+reducedDim(sce_comb, 'UMAP_corrected') <- reducedDim(sce_mnn, 'UMAP')
+
+
+# MNN-related diagnostic examining the variance in the differences in expression between MNN pairs.
+metadata(sce_mnn)$mnnDeltaVariance <- mnnDeltaVariance(
+  sce_comb,
+  pairs=metadata(sce_mnn)$merge.info$pairs, 
+  BPPARAM=BiocParallel::MulticoreParam(params$ncores, RNGseed=use_seed)
+  )
+
+# Save SCE objects
+saveRDS(sce_mnn, file.path(params$output_dir, 'sce_mnn.rds'))
+saveRDS(sce_comb, file.path(params$output_dir, 'sce_integrated.rds'))
+```
+
+### Clustering
+
+#### Clustering parameter sweeps
+```{r cluster-sweep, eval = FALSE}
+if(!exists('sce_comb'))
+  sce_comb <- readRDS(file.path(params$output_dir, 'sce_integrated.rds'))
+if(!exists('sce_mnn'))
+  sce_mnn <- readRDS(file.path(params$output_dir, 'sce_mnn.rds'))
+
+# ClusterSweep
+csweep <- clusterSweep(
+  reducedDim(sce_mnn, "corrected"), 
+  SNNGraphParam(), 
+  k=as.integer(c(5, 10, 15, 20, 25, 30, 35, 40)),
+  type="rank",
+  cluster.fun=c("walktrap"),
+  BPPARAM=BiocParallel::MulticoreParam(params$ncores, RNGseed=use_seed)
+  )
+
+saveRDS(csweep, file.path(params$output_dir, 'clusterSweep.rds'))
+```
+
+Evaluating [clustering parameters sweep](https://bioconductor.org/books/release/OSCA.advanced/clustering-redux.html#clustering-parameter-sweeps)
+```{r cluster-sweep-eval, eval = FALSE}
+if(!exists('sce_mnn'))
+  sce_mnn <- readRDS(file.path(params$output_dir, 'sce_mnn.rds'))
+if(!exists('csweep'))
+  csweep <- readRDS(file.path(params$output_dir, 'clusterSweep.rds'))
+
+df <- as.data.frame(csweep$parameters)
+df$num.clusters <- vapply(as.list(csweep$clusters), function(cluster) { 
+    length(unique(cluster))
+}, 0L)
+
+all.sil <- lapply(as.list(csweep$clusters), function(cluster) {
+    sil <- approxSilhouette(reducedDim(sce_mnn, 'corrected'), cluster)
+    mean(sil$width)
+})
+df$silhouette <- unlist(all.sil)
+
+all.pur <- foreach(cname=colnames(csweep$clusters)) %do% {
+  use_k <- gsub("k.", "", cname) %>% gsub("_.*", "", .) %>% as.numeric
+  pur <- neighborPurity(reducedDim(sce_mnn, 'corrected'), csweep$clusters[[cname]], k=use_k, BPPARAM=BiocParallel::MulticoreParam(params$ncores, RNGseed=use_seed))
+  mean(pur$width)
+}
+df$purity <- unlist(all.pur)
+
+all.wcss <- lapply(as.list(csweep$clusters), function(cluster) {
+    sum(clusterRMSD(reducedDim(sce_mnn, 'corrected'), cluster, sum=TRUE), na.rm=TRUE)
+})
+df$wcss <- unlist(all.wcss)
+
+gridExtra::grid.arrange(
+    ggplot(df, aes(x=k, y=num.clusters)) + 
+        geom_line(lwd=2) ,
+    ggplot(df, aes(x=k, y=silhouette)) + 
+        geom_line(lwd=2),
+    ggplot(df, aes(x=k, y=purity)) + 
+        geom_line(lwd=2),
+    ggplot(df, aes(x=k, y=wcss)) + 
+        geom_line(lwd=2),
+    ncol=2
+)
+```
+
+#### Clustering with best parameters
+```{r cluster-cells-after-correction, eval = FALSE}
+if(!exists('sce_comb'))
+  sce_comb <- readRDS(file.path(params$output_dir, 'sce_integrated.rds'))
+if(!exists('sce_mnn'))
+  sce_mnn <- readRDS(file.path(params$output_dir, 'sce_mnn.rds'))
+ 
+# Clustering using corrected values
+sce_mnn$cluster_mnn  <- clusterCells(
+  sce_mnn,
+  use.dimred="corrected",
+  BLUSPARAM=SNNGraphParam(k=20, type="rank", cluster.fun="walktrap",
+                          BPPARAM=BiocParallel::MulticoreParam(params$ncores, RNGseed=use_seed))
+)
+sce_comb$cluster_mnn <- sce_mnn$cluster_mnn
+
+# Save SCE objects
+saveRDS(sce_mnn, file.path(params$output_dir, 'sce_mnn.rds'))
+saveRDS(sce_comb, file.path(params$output_dir, 'sce_integrated.rds'))
+```
+
+### Markers detection
+
+We identify the genes that drive separation between clusters and cell types. These marker genes allow us to assign biological meaning to each cluster based on their functional annotation. We added batch as a blocking factor to the model. The block argument works for all effect sizes shown above and is robust to differences in the log-fold changes or variance between batches. However, it assumes that each pair of clusters is present in at least one batch. In scenarios where cells from two clusters never co-occur in the same batch, the associated pairwise comparison will be impossible and is ignored during calculation of summary statistics.
+
+```{r score-marker-genes, eval = FALSE}
+marker_info <- list()
+
+if(!exists('sce_comb'))
+  sce_comb <- readRDS(file.path(params$output_dir, 'sce_integrated.rds'))
+
+
+# Cluster markers
+marker_info$cluster_markers <- scoreMarkers(
+  sce_comb, 
+  groups = sce_comb$cluster_mnn %>% as.character, 
+  block = sce_comb$batch,
+  lfc=1, 
+  full.stats=TRUE,
+  row.data=rowData(sce_comb)[,c('gene_name', 'is.mito', 'is.ribo'),drop=FALSE],
+  BPPARAM=BiocParallel::MulticoreParam(1, RNGseed=use_seed)
+)
+
+
+# Site markers
+marker_info$site_markers <- scoreMarkers(
+  sce_comb, 
+  groups = sce_comb$site, 
+  block = sce_comb$batch,
+  lfc=1, 
+  full.stats=TRUE,
+  row.data=rowData(sce_comb)[,c('gene_name', 'is.mito', 'is.ribo'),drop=FALSE],
+  BPPARAM=BiocParallel::MulticoreParam(1, RNGseed=use_seed)
+)
+
+saveRDS(marker_info, file.path(params$output_dir, 'scoreMarkers.rds'))
+```
+
+
+### Functional enrichment
+Run functional enrichment based on results from cluster markers detection
+```{r functional-enrichment-clusters, eval = FALSE}
+# Load markers
+score_markers <- readRDS(file.path(params$output_dir, 'scoreMarkers.rds'))
+marker_info <- score_markers$cluster_markers
+
+# Load MSigDB files
+gmt_files_symbols <- list(
+  msigdb.m2.cp = './data/resources/MSigDB/v2022.1.Mm/m2.cp.v2022.1.Mm.symbols.gmt',
+  msigdb.m2.cp.reactome = './data/resources/MSigDB/v2022.1.Mm/m2.cp.reactome.v2022.1.Mm.symbols.gmt'
+)
+
+# Load mouse annotation for Go 
+library(org.Mm.eg.db)
+
+# Run ORA using mean.AUC
+i <- marker_info[[1]]
+gse_res<- foreach(i=marker_info) %do% {
+  x <- i %>% data.frame %>% rownames_to_column('features') %>% 
+    mutate(
+      p = 0
+    )
+  gse_omnibus(
+    feature_names = x$features,
+    p = x$p,
+    fc = x$mean.AUC,
+    fc_thrs = 0.25,
+    return_sets = c('abs'),
+
+    gmt_files = gmt_files_symbols,
+
+    annot_db = 'org.Mm.eg.db',
+    organism = 'mmusculus',
+    kegg_organism = 'mmu',
+    reactome_organism = 'mouse',
+
+    run_all_ora = FALSE,
+    run_all_gsea = FALSE,
+    run_GSEA = FALSE,
+    run_enricher = TRUE,
+    run_enrichGO = TRUE,
+
+    args_gse = list(minGSSize = 10, maxGSSize = 500, pvalueCutoff = 1),
+    args_enricher = list(minGSSize = 10, maxGSSize = 500, pvalueCutoff = 1, qvalueCutoff = 1),
+
+    go_simplify_p = 0.1,
+    go_simplify_cutoff = 0.4
+    )
+} 
+names(gse_res) <- names(marker_info)
+saveRDS(gse_res, file.path(params$output_dir, 'scoreMarkers_cluster_gse_auc.rds'))
+
+
+# # Run GSEA using Cohen's logFC
+# i <- marker_info[[1]]
+# gse_res<- foreach(i=marker_info) %do% {
+#   x <- i %>% data.frame %>% rownames_to_column('features') %>%
+#     mutate(
+#       p = 0,
+#       mean.logFC.cohen = ifelse(mean.logFC.cohen <= -5, -5, mean.logFC.cohen),
+#       mean.logFC.cohen = ifelse(mean.logFC.cohen >= 5, 5, mean.logFC.cohen)
+#     )
+# 
+#   gse_omnibus(
+#     feature_names = x$features,
+#     p = x$p,
+#     fc = x$mean.logFC.cohen,
+# 
+#     gmt_files = gmt_files_symbols,
+# 
+#     annot_db = 'org.Mm.eg.db',
+#     organism = 'mmusculus',
+#     kegg_organism = 'mmu',
+#     reactome_organism = 'mouse',
+# 
+#     run_all_ora = FALSE,
+#     run_all_gsea = FALSE,
+#     run_GSEA = TRUE,
+#     run_gseGO = TRUE,
+# 
+#     args_gse = list(minGSSize = 10, maxGSSize = 500, pvalueCutoff = 1)
+#     )
+# }
+# names(gse_res) <- names(marker_info)
+# saveRDS(gse_res, file.path(params$output_dir, 'scoreMarkers_cluster_gse_cohen.rds'))
+
+```
+
+Run functional enrichment based on results from site markers detection
+```{r functional-enrichment-sites, eval = FALSE}
+# Load markers
+score_markers <- readRDS(file.path(params$output_dir, 'scoreMarkers.rds'))
+marker_info <- score_markers$site_markers
+
+# Load MSigDB files
+gmt_files_symbols <- list(
+  msigdb.m2.cp = './data/resources/MSigDB/v2022.1.Mm/m2.cp.v2022.1.Mm.symbols.gmt',
+  msigdb.m2.cp.reactome = './data/resources/MSigDB/v2022.1.Mm/m2.cp.reactome.v2022.1.Mm.symbols.gmt'
+)
+
+# Load mouse annotation for Go 
+library(org.Mm.eg.db)
+
+# Run ORA using mean.AUC
+i <- marker_info[[1]]
+gse_res<- foreach(i=marker_info) %do% {
+  x <- i %>% data.frame %>% rownames_to_column('features') %>% 
+    mutate(
+      p = 0
+    )
+  gse_omnibus(
+    feature_names = x$features,
+    p = x$p,
+    fc = x$mean.AUC,
+    fc_thrs = 0.25,
+    return_sets = c('abs'),
+    
+    gmt_files = gmt_files_symbols, 
+
+    annot_db = 'org.Mm.eg.db',
+    organism = 'mmusculus',
+    kegg_organism = 'mmu',
+    reactome_organism = 'mouse',
+    
+    run_all_ora = FALSE,
+    run_all_gsea = FALSE,
+    run_GSEA = FALSE,
+    run_enricher = TRUE,
+    run_enrichGO = TRUE,
+
+    args_gse = list(minGSSize = 10, maxGSSize = 500, pvalueCutoff = 1),
+    args_enricher = list(minGSSize = 10, maxGSSize = 500, pvalueCutoff = 1, qvalueCutoff = 1),
+    
+    go_simplify_p = 0.1,
+    go_simplify_cutoff = 0.4
+    )
+} 
+names(gse_res) <- names(marker_info)
+saveRDS(gse_res, file.path(params$output_dir, 'scoreMarkers_site_gse_auc.rds'))
+
+# # Run GSEA using Cohen's logFC
+# i <- marker_info[[1]]
+# gse_res<- foreach(i=marker_info) %do% {
+#   x <- i %>% data.frame %>% rownames_to_column('features') %>% 
+#     mutate(
+#       p = 0,
+#       mean.logFC.cohen = ifelse(mean.logFC.cohen <= -5, -5, mean.logFC.cohen),
+#       mean.logFC.cohen = ifelse(mean.logFC.cohen >= 5, 5, mean.logFC.cohen)
+#     )
+#   
+#   gse_omnibus(
+#     feature_names = x$features,
+#     p = x$p,
+#     fc = x$mean.logFC.cohen,
+#     
+#     gmt_files = gmt_files_symbols, 
+# 
+#     annot_db = 'org.Mm.eg.db',
+#     organism = 'mmusculus',
+#     kegg_organism = 'mmu',
+#     reactome_organism = 'mouse',
+#     
+#     run_all_ora = FALSE,
+#     run_all_gsea = FALSE,
+#     run_GSEA = TRUE,
+#     run_gseGO = TRUE,
+# 
+#     args_gse = list(minGSSize = 10, maxGSSize = 500, pvalueCutoff = 1)
+#     )
+# }
+# names(gse_res) <- names(marker_info)
+# saveRDS(gse_res, file.path(params$output_dir, 'scoreMarkers_site_gse_cohen.rds'))
+
+```
+
+
+### Load data
+```{r load-data}
+sce_comb <- readRDS(file.path(params$output_dir, 'sce_integrated.rds'))
+sce_mnn <- readRDS(file.path(params$output_dir, 'sce_mnn.rds'))
+score_markers <- readRDS(file.path(params$output_dir, 'scoreMarkers.rds'))
+gse_cl_auc <- readRDS( file.path(params$output_dir, 'scoreMarkers_cluster_gse_auc.rds'))
+gse_site_auc <- readRDS( file.path(params$output_dir, 'scoreMarkers_site_gse_auc.rds'))
+
+# Cluster MNN levels
+cl_levels_sort <- sce_comb$cluster_mnn %>% as.character %>% as.numeric %>% unique %>% sort %>% as.character()
+cl_levels_rev <- sce_comb$cluster_mnn %>% as.character %>% as.numeric %>% unique %>% sort(decreasing = TRUE) %>% as.character()
+sce_comb$cluster_mnn %<>% as.character %>% factor(levels = cl_levels_sort)
+sce_comb$cluster_mnn_rev <- sce_comb$cluster_mnn %>% as.character %>% factor(levels = cl_levels_rev)
+
+# Selected MNN clusters to show
+selected_clusters_to_show_list <- list(
+  `Primary tumor` = c('11', '4'),
+  Liver = c('7', '12'),
+  Lung = c('8', '6')
+)
+
+selected_clusters_to_show <- unlist(selected_clusters_to_show_list)
+
+selected_clusters_to_df <- rbind(
+  c(site_caps = 'Primary tumor', cluster = '11'),
+  c(site_caps = 'Primary tumor', cluster = '4'),
+  c(site_caps = 'Liver', cluster = '7'),
+  c(site_caps = 'Liver', cluster = '12'),
+  c(site_caps = 'Lung', cluster = '8'),
+  c(site_caps = 'Lung', cluster = '6')
+) %>% 
+  data.frame %>% 
+  mutate(
+    site_caps = factor(site_caps, levels = c('Primary tumor', 'Liver', 'Lung')),
+  )
+
+site_caps_ord <- c('Primary tumor', 'Liver', 'Lung')
+site_ord <- c('primary_tumor', 'liver', 'lung')
+
+# Add new colData vars
+colData(sce_comb) <- colData(sce_comb) %>% data.frame %>% 
+  mutate(
+    site_caps = ifelse(site == 'liver', 'Liver', site),
+    site_caps = ifelse(site == 'lung', 'Lung', site_caps),
+    site_caps = ifelse(site == 'primary_tumor', 'Primary tumor', site_caps),
+    site_caps = factor(site_caps, levels = c('Primary tumor', 'Liver', 'Lung')),
+    site = factor(site, levels = c('primary_tumor', 'liver', 'lung'))
+  ) %>% 
+  DataFrame
+
+# Coordinate colData between sce_comb and sce_mnn
+colData(sce_mnn) <- colData(sce_comb)
+assay(sce_mnn, 'logcounts') <- logcounts(sce_comb[rownames(sce_mnn),])
+reducedDim(sce_comb, 'UMAP_corrected') <- reducedDim(sce_mnn, 'UMAP')
+```
+
+
+
+
+## Data description
+
+### Site distribution per batch
+```{r batch-site-dist}
+table(sce_comb$Sample, sce_comb$site) %>% 
+  kbl(caption = 'Number of cells per batch and site.') %>%
+  kable_paper(bootstrap_options = c("striped", "hover", "condensed"), full_width = F)
+
+sites_selected <- sce_comb$site %>% table %>% data.frame %>% dplyr::rename(site = ".") %>% filter(Freq >= 500) %>% collect %>% .[['site']] %>% as.character
+```
+
+
+## UMAP
+
+### Site
+```{r final-figures-umap-site, fig.asp = 0.6}
+plotUMAP(sce_mnn, colour_by="site_caps", point_alpha = 0.2, point_size = 0.05) + 
+  scale_color_manual(values = site_palette) +
+  guides(colour = guide_legend(override.aes = list(alpha = 1, size = 3))) +
+  labs(
+    color = '',
+    title = paste0('UMAP of all cancer cells (',scales::number(ncol(sce_mnn), big.mark = "'"),' cells)')
+  ) +
+  theme(
+    plot.title = element_text(size = 8, face = 'plain'),
+    axis.line = element_line(linewidth = rel(0.5)),
+    axis.text=element_blank(),
+    axis.ticks=element_blank()#,
+    # axis.line =element_blank()
+  )
+```
+
+### Cluster
+```{r final-figures-umap-cluster, fig.asp = 0.6}
+plotUMAP(sce_mnn, colour_by="cluster_mnn", text_by="cluster_mnn", point_alpha = 0.2, point_size = 0.05, text_size = 2) + 
+  guides(colour = guide_legend(override.aes = list(alpha = 1, size = 3))) +
+  labs(
+    color = '',
+    title = paste0('UMAP of all cancer cells (',scales::number(ncol(sce_mnn), big.mark = "'"),' cells)')
+  ) +
+  theme(
+    plot.title = element_text(size = 8, face = 'plain'),
+    axis.line = element_line(linewidth = rel(0.5)),
+    axis.text=element_blank(),
+    axis.ticks=element_blank()#,
+    # axis.line =element_blank()
+  )
+```
+
+
+
+
+
+## Differential abundance of clusters
+Differential abundance of clusters by site
+
+### Statistical analysis
+Differential abundance using `speckle::propeller` package
+```{r da-propeller-cluster_mnn-conf}
+ct_label <- 'cluster_mnn'
+use_data <- colData(sce_comb) %>% data.frame %>% 
+  mutate(
+    sample = paste(mouse_id, site_caps, sep = '_')
+  )
+
+# Run propeller Global
+propeller_global <- propeller(clusters = use_data[[ct_label]], sample = use_data$sample, group = use_data$site_caps) %>% 
+  rownames_to_column('cluster')
+
+# Run pairwise propeller to obtain P-values
+site_levels <- use_data$site_caps %>% unique
+site_combn <- combn(site_levels, 2, simplify = FALSE)
+sc <-  site_combn[[1]]
+propeller_pairwise <-foreach(sc = site_combn, .combine = rbind) %do% {
+  cat(sc)
+  use_data <- colData(sce_comb) %>% data.frame %>% 
+    filter(site_caps %in% sc) %>% 
+    mutate(
+      sample = paste(mouse_id, site_caps, sep = '_'),
+      group = ifelse(site_caps == sc[1], 'group1', 'group2')
+    )
+  propeller(clusters = use_data[[ct_label]], sample = use_data$sample, group = use_data$group) %>% 
+    mutate(
+      group1 = sc[1],
+      group2 = sc[2],
+      FDR.sign = symnum(FDR, corr = FALSE, na = FALSE, cutpoints = c(0, 0.0001,0.001, 0.01, 0.05, 1), symbols = c("****", "***", "**", "*", "")),
+      p.sign = symnum(P.Value, corr = FALSE, na = FALSE, cutpoints = c(0, 0.0001, 0.001, 0.01, 0.05, 1), symbols = c("****", "***", "**", "*", ""))
+    ) %>% 
+    dplyr::rename(cluster = BaselineProp.clusters)
+}
+
+```
+
+Table of results with pairwise comparison between sites for cluster abundance. 
+```{r da-propeller-cluster_mnn-tab}
+propeller_pairwise %>%
+  arrange(FDR) %>% 
+  datatable(., 
+            rownames = FALSE, 
+            filter = 'top', 
+            caption = 'Pairwise comparison between sites for cluster abundance using speckle::propeller',
+            extensions = 'Buttons', 
+            options = list(
+              dom = 'Blfrtip',
+              buttons = c('csv', 'excel')
+            )) %>% 
+  formatPercentage(names(propeller_pairwise)[2:4], digits = 3) %>% 
+  formatRound(names(propeller_pairwise)[5:6], digits = 3, interval = -1000) %>% 
+  formatSignif(c('P.Value', 'FDR'), digits = 3)
+```
+
+
+### Barplots by site and mouse
+
+```{r da-barplot-site-and-mouse-cluster_mnn}
+# Create data
+use_data <- colData(sce_comb) %>% 
+  data.frame %>%
+  dplyr::rename('celltype_label' = ct_label) %>% 
+  group_by(site_caps, mouse_id, celltype_label) %>% 
+  summarise(freq = n()) %>% 
+  dplyr::rename(cell_type = celltype_label) %>% 
+  na.omit()
+
+# Remove low abundant cell types and sites
+cell_type_freq <- use_data %>% group_by(cell_type) %>% summarise(totalfreq = sum(freq))
+site_filtered <- use_data %>% group_by(site_caps) %>% summarise(freq = sum(freq)) %>% filter(freq >= 0)
+use_data <- use_data %>% 
+  filter(site_caps %in% site_filtered$site_caps) %>% 
+  left_join(cell_type_freq) %>% 
+  mutate(cell_type = fct_reorder(cell_type, totalfreq))
+
+# Arrange data and add labels
+arranged_data <- use_data %>% 
+  arrange(site_caps, cell_type)%>% 
+  group_by(site_caps, mouse_id) %>%
+  mutate(
+    totalfreq_by_site = sum(freq),
+    proportion = freq/ totalfreq_by_site,
+    label_y = cumsum(freq)/ totalfreq_by_site,
+    label_y = label_y - 0.5 * (freq / totalfreq_by_site),
+    cell_type = fct_reorder(cell_type, totalfreq, .desc = TRUE),
+    cell_type_label = as.character(cell_type),
+    cell_type_label = ifelse(proportion < 0.03, '', cell_type_label)
+    
+  )
+```
+
+
+### Stripchart-Boxplot
+```{r da-stripchart-site-and-mouse-cluster_mnn, fig.width=7.2}
+max_prop_cell_type <- arranged_data %>% group_by(cell_type) %>% summarise(max_proportion = max(proportion))
+stat_test <- propeller_pairwise %>% 
+  filter(group1 %in% arranged_data$site_caps & group2 %in%  arranged_data$site_caps) %>%
+  left_join(max_prop_cell_type, by = c('cluster'='cell_type')) %>%
+  arrange(cluster, group1, group2) %>% 
+  na.omit() %>% 
+  filter(FDR < 0.05) %>% 
+  mutate(cell_type = cluster)
+  
+add_count_y <- stat_test %>% group_by(cluster) %>% summarise(group1 = group1, group2 = group2, n = 1:n())
+stat_test <- stat_test %>% left_join(add_count_y) %>% mutate(y.position = max_proportion + (n*max_proportion/20))
+
+arranged_data %>% 
+  ggplot(aes(x = site_caps, y = proportion, color = site_caps)) +
+  geom_boxplot(alpha = 0.4, color = 'black', aes(fill = site_caps), 
+               show.legend = FALSE, size = 0.25, fatten = 1) +
+  # geom_point(alpha = 1, size = 2, shape = 21, color = 'black', aes(fill = site_caps)) +
+  geom_quasirandom(method="smiley", width = 0.1, alpha = 1, size = 1, 
+                   shape = 21, color = 'black', aes(fill = site_caps), stroke = 0.4) +
+  scale_fill_manual(values = site_palette) +
+  scale_color_manual(values = site_palette) +
+  # scale_y_continuous(expand = c(0, 0)) +
+  scale_y_continuous(expand = c(0.02, 0, 0.05, 0)) +
+  scale_x_discrete(expand = c(0, 0.5)) +
+  theme(axis.text.x = element_text(angle = 45, vjust = 1, hjust=1)) +
+  facet_wrap(vars(cell_type), scales = 'free_y') +
+  labs(
+    fill = 'Site', 
+    x = NULL,
+    y = 'Proportion of cells'
+  ) +
+  stat_pvalue_manual(stat_test, label = 'FDR.sign')
+
+```
+
+### Stripchart-Boxplot selected clusters equal breaks
+```{r da-stripchart-site-and-mouse-cluster_mnn-selected-equal-breaks, fig.width = 2.08, fig.asp=1.85}
+sub_arranged_data <- arranged_data %>% 
+  filter(cell_type %in% selected_clusters_to_show) %>% 
+  mutate(
+    cell_type = as.character(cell_type)
+  )
+
+# add missing categories
+for(ct in unique(sub_arranged_data$cell_type)) {
+  for(st in unique(sub_arranged_data$site_caps)) {
+    for(mi in unique(sub_arranged_data$mouse_id)){
+      nmatch <- sub_arranged_data %>% 
+        filter(cell_type == ct) %>%  
+        filter(site_caps == st) %>%  
+        filter(mouse_id == mi) %>% 
+        nrow
+      if(nmatch == 0){
+        add_df <- sub_arranged_data[1,] %>% 
+          mutate_all(function(x) NA) %>% 
+          mutate(
+            site_caps = st, 
+            mouse_id = mi,
+            cell_type = ct,
+            proportion = 0) 
+        sub_arranged_data <- rbind(sub_arranged_data, add_df)
+      }
+    }
+  }
+}
+
+sub_arranged_data %<>% 
+  mutate(site_caps = factor(site_caps, levels = levels(arranged_data$site_caps)))
+
+
+# stat test
+max_prop_cell_type <- sub_arranged_data %>% group_by(cell_type) %>% summarise(max_proportion = max(proportion))
+stat_test <- propeller_pairwise %>% 
+  filter(group1 %in% sub_arranged_data$site_caps & group2 %in%  sub_arranged_data$site_caps) %>%
+  left_join(max_prop_cell_type, by = c('cluster'='cell_type')) %>%
+  arrange(cluster, group1, group2) %>% 
+  na.omit() %>% 
+  filter(FDR < 0.05) %>% 
+  mutate(cell_type = cluster)
+  
+add_count_y <- stat_test %>% group_by(cluster) %>% summarise(group1 = group1, group2 = group2, n = 1:n())
+stat_test <- stat_test %>% left_join(add_count_y) %>% mutate(y.position = max_proportion + (n*max_proportion/3))
+
+# add site info
+use_cl_info <- selected_clusters_to_df %>% 
+  mutate(site_cl = paste(site_caps, cluster))
+
+sub_arranged_data %<>% 
+  left_join(use_cl_info %>% rename(site_caps_g = site_caps), 
+            by = join_by(cell_type == cluster)) %>% 
+  mutate(cell_type = factor(site_cl, levels = use_cl_info$site_cl)) 
+
+stat_test %<>% 
+  left_join(use_cl_info) %>% 
+  mutate(cell_type = factor(site_cl, levels = use_cl_info$site_cl)) 
+
+equal_breaks <- function(n = 3, s = 0.05, ...){
+  function(x){
+    # rescaling
+    d <- s * diff(range(x)) / (1+2*s)
+    seq(0, max(x)-d, length=n) %>% round(2)
+    # res <- seq(min(x)+d, max(x)-d, length=n)
+    # floor(10*res) / 10
+  }
+}
+
+stat_test$cell_type <- recode_factor(
+      stat_test$cell_type, 
+      `Primary tumor 11` = "PT 11", 
+      `Primary tumor 4` = "PT 4")
+
+sub_arranged_data %>% 
+  mutate(
+    cell_type = recode_factor(
+      cell_type, 
+      `Primary tumor 11` = "PT 11", 
+      `Primary tumor 4` = "PT 4")
+  ) %>% 
+  ggplot(aes(x = site_caps, y = proportion, color = site_caps)) +
+  geom_boxplot(alpha = 0.4, color = 'black', aes(fill = site_caps), 
+               show.legend = FALSE, size = 0.25, fatten = 1) +
+  # geom_point(alpha = 1, size = 2, shape = 21, color = 'black', aes(fill = site_caps)) +
+  geom_quasirandom(method="smiley", width = 0.2, alpha = 1, size = 1, 
+                   shape = 21, color = 'black', aes(fill = site_caps), stroke = 0.4) +
+  scale_fill_manual(values = site_palette) +
+  scale_color_manual(values = site_palette) +
+  # scale_y_continuous(expand = c(0, 0)) +
+  scale_y_continuous(expand = c(0.06, 0, 0.10, 0),
+                     # n.breaks = 4,
+                     breaks=equal_breaks(n=4, s=0.1)
+                     # limits = c(0, 0.55)
+                     ) +
+  scale_x_discrete(expand = c(0, 0.5)) +
+  facet_wrap(vars(cell_type), scales = 'free_y', ncol = 2) +
+  guides(
+    # fill = guide_legend(override.aes = list(alpha = 1, size = 3)),
+    fill = 'none',
+    color = 'none',
+    ) +
+  labs(
+    fill = 'Site', 
+    x = NULL,
+    y = 'Proportion of cells'
+  ) +
+  stat_pvalue_manual(stat_test, label = 'FDR.sign', size = 2.88) +
+    theme(
+      # axis.text.x = element_text(angle = 45, vjust = 1, hjust=1)
+      axis.text.x = element_blank()
+      # axis.text.x = element_blank(),
+      # panel.border = element_rect(color = "black", fill = NA, linewidth = 1),
+      # axis.line = element_blank(),
+      # axis.ticks.x=element_blank(),
+      # axis.line.x = element_blank(),
+      # strip.background = element_blank()
+      )
+
+```
+
+
+## Cluster markers enrichment
+
+### ORA - C2.CP.REACTOME and GO:BP
+
+Over-enrichment analysis using genes with a mean AUC ≥ 0.25 in the score markers results.
+
+```{r cluster-marker-gse-enricher-c2reactome_gobp-conf}
+gse_list <- gse_cl_auc
+test_type <- 'enricher'
+gset_collection <- 'msigdb.m2.cp.reactome'
+direction <- 'abs'
+p_thrs <- 0.01
+topn <- 20
+
+# Load all the results
+gse_df <- foreach(i = names(gse_list), .combine = rbind) %do% {
+  i_1 <- gse_list[[i]][[test_type]][[direction]][[gset_collection]]@result %>% 
+    mutate(group = i)
+  i_2 <- gse_list[[i]][['enrichGO']][[direction]][['BP']]@result %>% 
+    filter(simplify) %>% 
+    dplyr::select(-simplify) %>% 
+    mutate(group = i)
+  rbind(i_1, i_2)
+} %>% 
+  mutate(
+    group_n = as.numeric(group),
+    group = fct_reorder(group, group_n),
+    Description = clean_msigdb_names(Description) %>% tolower() %>% str_to_title,
+    Description = ifelse(grepl("^GO:", ID), paste0("GO:", Description), Description)
+  ) %>% 
+  dplyr::select(-group_n)
+
+# Select topn by group in selected gset
+top_by_group <- foreach(i = names(gse_list), .combine = c) %do% {
+  gse_df %>% 
+    filter(group == i) %>% 
+    filter(p.adjust < p_thrs) %>% 
+    arrange(p.adjust) %>% pull(Description) %>%
+    head(topn)
+}
+
+# Data frame to plot
+res_top <- gse_df %>% 
+  filter(Description %in% top_by_group) %>% 
+  mutate(log.p.adjust = -log10(p.adjust))
+
+# Rows and column orders by hclust
+use_mat <- res_top %>% 
+  dplyr::select(Description, log.p.adjust, group) %>% 
+  pivot_wider(names_from = group, values_from = log.p.adjust) %>% 
+  column_to_rownames('Description')
+use_mat[is.na(use_mat)] <- 0
+
+row_hclust <- hclust(dist(use_mat))
+row_hclust_labels <- row_hclust$labels[row_hclust$order]
+
+col_hclust <- hclust(dist(t(use_mat)))
+col_hclust_labels <- col_hclust$labels[col_hclust$order]
+
+use_mat <- use_mat[row_hclust_labels,col_hclust_labels]
+
+# GSET clusters by kmeans using silhouette
+use_kmax <- ifelse(nrow(use_mat) <= 20, nrow(use_mat)-2, 20)
+nb_clust <- fviz_nbclust(use_mat, kmeans, method = "silhouette", k.max = use_kmax)
+silhouette_best_k <- nb_clust$data %>% slice_max(y) %>% pull(clusters) %>% as.character %>% as.numeric
+# silhouette_best_k <- 5
+kmeans_mat <- kmeans(use_mat, silhouette_best_k, nstart = 25)
+kmeans_mat_df <- kmeans_mat$cluster %>%
+  data.frame %>%
+  set_names('kcluster') %>%
+  rownames_to_column('Description') %>%
+  mutate(kcluster = as.character(kcluster))
+
+
+# Order factors by hclust
+res_top %<>% 
+  left_join(kmeans_mat_df) %>% 
+  mutate(
+    Description = factor(Description, levels = row_hclust_labels),
+    group = fct_relevel(group, col_hclust_labels)
+  )
+
+# Calculate jaccard similarity matrix
+gset_collection <- foreach(i = levels(res_top$Description)) %do% {
+  res_top %>% filter(Description == i) %>% pull(geneID) %>% 
+    paste(collapse = '/') %>% 
+    strsplit('/') %>% unlist %>% unique
+}
+names(gset_collection) <- levels(res_top$Description)
+
+use_terms <- res_top$Description %>% unique
+jc_matrix <- pairwise_terms_jc(gset_collection[use_terms])
+```
+
+#### Results table
+```{r cluster-marker-gse-enricher-c2reactome_gobp-table}
+gse_df %>% 
+  filter(p.adjust < p_thrs) %>% 
+  arrange(desc(p.adjust)) %>% 
+  dplyr::select(group, ID:p.adjust, Count:GeneProp, geneID)  %>%
+  dplyr::rename(cluster = group) %>% 
+  datatable(., 
+            rownames = FALSE, 
+            filter = 'top', 
+            caption = 'Results from over enrichment analysis',
+            extensions = 'Buttons', 
+            options = list(
+              dom = 'Blfrtip',
+              buttons = c('csv', 'excel')
+            ))  %>% 
+  formatRound(c('GeneProp'), digits = 2) %>%
+  formatSignif(c('pvalue', 'p.adjust'), digits = 3)
+```
+
+#### Number of gene sets
+```{r cluster-marker-gse-enricher-c2reactome_gobp-ngset}
+gse_df %>% 
+  filter(p.adjust < p_thrs) %>% 
+  group_by(group) %>% 
+  summarise(n = n()) %>% 
+  ggplot(aes(x=group, y=n)) +
+  geom_bar(stat="identity", color = 'black')+
+  geom_text(aes(label=n), vjust=1.4, color="white", size=geom_text_size)+
+  labs(
+    x = 'Clusters',
+    y = 'Number of gene sets',
+    title = 'Number of significant gene sets by cluster',
+    caption = paste("Adjusted P value <", p_thrs)
+    
+  )
+```
+
+#### Gene-set similarity matrix
+Heatmap showing the pair-wise similarity matrix of top `r topn` gene sets with an adjusted P value < `r p_thrs` in each gene group. Heatmap colors represent the Jaccard similarity coefficient.
+
+```{r cluster-marker-gse-enricher-c2reactome_gobp-jcmatrix, fig.width=7.2, fig.asp=1.9}
+col_fun <- colorRamp2(seq(0, 1, length.out = 4), brewer.pal(4, "GnBu"))
+n_split <- 10
+
+use_mat <- jc_matrix
+colnames(use_mat) <- colnames(use_mat) %>% clean_msigdb_names %>% tolower() %>% str_to_title %>% ep_str_wrap(70)
+rownames(use_mat) <- rownames(use_mat) %>% clean_msigdb_names %>% tolower() %>% str_to_title %>% ep_str_wrap(70)
+
+ha_top <- HeatmapAnnotation(
+  foo = anno_block(
+    # labels = c("Translation", "Cell division"),
+    labels = 1:n_split,
+    labels_gp = gpar(col = "black", fontsize = 8),
+    gp = gpar(lwd = 0, lty = 0))
+  )
+
+ht <- Heatmap(
+  use_mat,
+  name = 'Jaccard index',
+  column_split = n_split,
+  row_split = n_split,
+  column_title = NULL,
+  row_title = NULL,
+  col = col_fun,
+  show_column_dend = FALSE,
+  show_column_names = FALSE,
+  border = TRUE,
+  top_annotation = ha_top,
+  heatmap_legend_param = list(title_gp = gpar(fontsize = 8),labels_gp = gpar(fontsize = 8)),
+  width = unit(7, "cm"))
+
+ht = draw(ht)
+
+cat("\n\n")
+
+# Extract term order according to hclust from similarity heatmap
+row_order <- row_order(ht) %>% set_names(1:n_split)
+term_similarity_clusters <- foreach(i=names(row_order), .combine = rbind) %do% {
+  data.frame(
+    jc_sim_cl = i, 
+    row_order = row_order[[i]], 
+    Description =  rownames(jc_matrix)[row_order[[i]]]
+  )
+}
+
+# Add similarity order to data for dot plot
+res_top %<>% left_join(term_similarity_clusters)
+```
+
+
+#### Dotplots
+The plots below show the top `r topn` gene sets with an adjusted P value < `r p_thrs` in each gene group
+```{r cluster-marker-gse-enricher-c2reactome_gobp-dotplot, fig.width = 7.2, fig.asp = 1.4}
+res_top %>%
+  # Combine similarity clusters
+  mutate(
+    # jc_sim_cl = ifelse(jc_sim_cl %in% c('5', '10'), '5-10', jc_sim_cl),
+    # jc_sim_cl = ifelse(jc_sim_cl %in% c('2', '4'), '2-4', jc_sim_cl),
+    # jc_sim_cl = factor(
+    #   jc_sim_cl,
+    #   levels = c('1', '3', '5-10', '6', '8', '9', '2-4', '7')
+    #   ),
+
+    p.adjust = ifelse(p.adjust > 0.05, 1, p.adjust),
+    p.adjust = -log10( p.adjust),
+    p.adjust = ifelse(p.adjust >= 10, 10, p.adjust),
+  ) %>% 
+  ggplot(aes(group, Description, color = GeneProp, size = p.adjust)) +
+  geom_point() +
+  scale_color_distiller(palette = "Purples", na.value = "grey70", direction = 1) +
+  scale_y_discrete(labels = default_labeller(70)) +
+  scale_x_discrete(position = "top") +
+  labs(y = '', x = '') +
+  # facet_grid(rows = vars(cluster), scale = 'free', space = 'free') +
+  # facet_grid(rows = vars(kcluster), scale = 'free', space = 'free') +
+  facet_grid(rows = vars(jc_sim_cl), scale = 'free', space = 'free') +
+  theme(
+    panel.border = element_rect(color = "black", fill = NA, size = 1),
+    # axis.text.x=element_blank(),
+    axis.ticks.x=element_blank(),
+    axis.line.x = element_blank(),
+    panel.grid.major.y = element_line(size = 0.2, colour="grey60", linetype = 'longdash'),
+    panel.grid.major.x = element_line(size = 0.2, colour="grey60", linetype = 'longdash'),
+    strip.background = element_blank()#,
+    # strip.text.y = element_blank()
+    )
+```
+
+
+### ORA - C2.CP.REACTOME and GO:BP for selected clusters
+
+Over-enrichment analysis using genes with a mean AUC ≥ 0.25 in the score markers results.
+
+```{r selected-cluster-marker-gse-enricher-c2reactome_gobp-conf}
+gse_list <- gse_cl_auc
+test_type <- 'enricher'
+gset_collection <- 'msigdb.m2.cp.reactome'
+direction <- 'abs'
+p_thrs <- 0.0001
+topn <- 20
+selected_clusters <- data.frame(
+  site = c('PT', 'PT', 'Lung', 'Lung', 'Liver', 'Liver'),
+  group = c('11', '4', '8', '6', '7', '12')
+)
+
+# Load all the results
+gse_df <- foreach(i = selected_clusters$group, .combine = rbind) %do% {
+  i_1 <- gse_list[[i]][[test_type]][[direction]][[gset_collection]]@result %>% 
+    mutate(group = i)
+  i_2 <- gse_list[[i]][['enrichGO']][[direction]][['BP']]@result %>% 
+    filter(simplify) %>% 
+    dplyr::select(-simplify) %>% 
+    mutate(group = i)
+  rbind(i_1, i_2)
+} %>% 
+  mutate(
+    group_n = as.numeric(group),
+    group = fct_reorder(group, group_n),
+    Description = clean_msigdb_names(Description) %>% tolower() %>% str_to_title,
+    Description = ifelse(grepl("^GO:", ID), paste0("GO:", Description), Description)
+  ) %>% 
+  dplyr::select(-group_n)
+
+# Select topn by group in selected gset
+top_by_group <- foreach(i = selected_clusters$group, .combine = c) %do% {
+  gse_df %>% 
+    filter(group == i) %>% 
+    filter(p.adjust < p_thrs) %>% 
+    arrange(p.adjust) %>% pull(Description) %>%
+    head(topn)
+}
+
+# Data frame to plot
+res_top <- gse_df %>% 
+  filter(Description %in% top_by_group) %>% 
+  mutate(log.p.adjust = -log10(p.adjust))
+
+# Rows and column orders by hclust
+use_mat <- res_top %>% 
+  dplyr::select(Description, log.p.adjust, group) %>% 
+  pivot_wider(names_from = group, values_from = log.p.adjust) %>% 
+  column_to_rownames('Description')
+use_mat[is.na(use_mat)] <- 0
+
+row_hclust <- hclust(dist(use_mat))
+row_hclust_labels <- row_hclust$labels[row_hclust$order]
+
+col_hclust <- hclust(dist(t(use_mat)))
+col_hclust_labels <- col_hclust$labels[col_hclust$order]
+
+use_mat <- use_mat[row_hclust_labels,col_hclust_labels]
+
+# GSET clusters by kmeans using silhouette
+use_kmax <- ifelse(nrow(use_mat) <= 20, nrow(use_mat)-2, 20)
+nb_clust <- fviz_nbclust(use_mat, kmeans, method = "silhouette", k.max = use_kmax)
+silhouette_best_k <- nb_clust$data %>% slice_max(y) %>% pull(clusters) %>% as.character %>% as.numeric
+# silhouette_best_k <- 5
+kmeans_mat <- kmeans(use_mat, silhouette_best_k, nstart = 25)
+kmeans_mat_df <- kmeans_mat$cluster %>%
+  data.frame %>%
+  set_names('kcluster') %>%
+  rownames_to_column('Description') %>%
+  mutate(kcluster = as.character(kcluster))
+
+
+# Order factors by hclust
+res_top %<>% 
+  left_join(kmeans_mat_df) %>% 
+  mutate(
+    Description = factor(Description, levels = row_hclust_labels),
+    group = fct_relevel(group, col_hclust_labels)
+  )
+
+# Calculate jaccard similarity matrix
+gset_collection <- foreach(i = levels(res_top$Description)) %do% {
+  res_top %>% filter(Description == i) %>% 
+    pull(geneID) %>% 
+    paste(collapse = '/') %>% 
+    strsplit('/') %>% unlist %>% unique
+}
+names(gset_collection) <- levels(res_top$Description)
+
+use_terms <- res_top$Description %>% unique
+jc_matrix <- pairwise_terms_jc(gset_collection[use_terms])
+```
+
+#### Results table
+
+```{r selected-cluster-marker-gse-enricher-c2reactome_gobp-table}
+gse_df %>% 
+  filter(p.adjust < p_thrs) %>% 
+  arrange(desc(p.adjust)) %>% 
+  dplyr::select(group, ID:p.adjust, Count:GeneProp, geneID)  %>%
+  dplyr::rename(cluster = group) %>% 
+  datatable(., 
+            rownames = FALSE, 
+            filter = 'top', 
+            caption = 'Results from over enrichment analysis',
+            extensions = 'Buttons', 
+            options = list(
+              dom = 'Blfrtip',
+              buttons = c('csv', 'excel')
+            ))  %>% 
+  formatRound(c('GeneProp'), digits = 2) %>%
+  formatSignif(c('pvalue', 'p.adjust'), digits = 3)
+```
+
+#### Number of gene sets
+
+```{r selected-cluster-marker-gse-enricher-c2reactome_gobp-ngset}
+gse_df %>% 
+  filter(p.adjust < p_thrs) %>% 
+  group_by(group) %>% 
+  summarise(n = n()) %>% 
+  ggplot(aes(x=group, y=n)) +
+  geom_bar(stat="identity", color = 'black')+
+  geom_text(aes(label=n), vjust=1.4, color="white", size=geom_text_size)+
+  labs(
+    x = 'Clusters',
+    y = 'Number of gene sets',
+    title = 'Number of significant gene sets by cluster',
+    caption = paste("Adjusted P value <", p_thrs)
+    
+  )
+```
+
+#### Gene-set similarity matrix
+
+Heatmap showing the pair-wise similarity matrix of top `r topn` gene sets with an adjusted P value \< `r p_thrs` in each gene group. Heatmap colors represent the Jaccard similarity coefficient.
+
+```{r selected-cluster-marker-gse-enricher-c2reactome_gobp-jcmatrix, fig.width=7.2, fig.asp=1.9}
+col_fun <- colorRamp2(seq(0, 1, length.out = 4), brewer.pal(4, "GnBu"))
+n_split <- 7
+
+use_mat <- jc_matrix
+colnames(use_mat) <- colnames(use_mat) %>% clean_msigdb_names %>% tolower() %>% str_to_title %>% ep_str_wrap(70)
+rownames(use_mat) <- rownames(use_mat) %>% clean_msigdb_names %>% tolower() %>% str_to_title %>% ep_str_wrap(70)
+
+ha_top <- HeatmapAnnotation(
+  foo = anno_block(
+    # labels = c("Translation", "Cell division"),
+    labels = 1:n_split,
+    labels_gp = gpar(col = "black", fontsize = 8),
+    gp = gpar(lwd = 0, lty = 0))
+  )
+
+ht <- Heatmap(
+  use_mat,
+  name = 'Jaccard index',
+  column_split = n_split,
+  row_split = n_split,
+  column_title = NULL,
+  row_title = NULL,
+  col = col_fun,
+  show_column_dend = FALSE,
+  show_column_names = FALSE,
+  border = TRUE,
+  top_annotation = ha_top,
+  heatmap_legend_param = list(title_gp = gpar(fontsize = 8),labels_gp = gpar(fontsize = 8)),
+  width = unit(7, "cm"))
+
+ht = draw(ht)
+
+cat("\n\n")
+
+# Extract term order according to hclust from similarity heatmap
+row_order <- row_order(ht) %>% set_names(1:n_split)
+term_similarity_clusters <- foreach(i=names(row_order), .combine = rbind) %do% {
+  data.frame(
+    jc_sim_cl = i, 
+    row_order = row_order[[i]], 
+    Description =  rownames(jc_matrix)[row_order[[i]]]
+  )
+}
+
+# Add similarity order to data for dot plot
+res_top %<>% left_join(term_similarity_clusters)
+```
+
+#### Dotplots
+
+The plots below show the top `r topn` gene sets with an adjusted P value \< `r p_thrs` in each gene group
+
+```{r selected-cluster-marker-gse-enricher-c2reactome_gobp-dotplot, fig.width = 6, fig.asp = 1.25}
+res_top %>%
+  left_join(selected_clusters) %>%
+   # Combine similarity clusters
+  mutate(
+    jc_sim_cl = ifelse(jc_sim_cl %in% c('3'), 'Translation', jc_sim_cl),
+    jc_sim_cl = ifelse(jc_sim_cl %in% c('4'), 'Energy\ngeneration', jc_sim_cl),
+    jc_sim_cl = ifelse(jc_sim_cl %in% c('6'), 'Cell\nStress', jc_sim_cl),
+    jc_sim_cl = factor(
+      jc_sim_cl,
+      levels = c('Translation', 'Energy\ngeneration', 'Cell\nStress', '1', '2', '5', '7')
+      ),
+    p.adjust = ifelse(p.adjust > 0.05, 1, p.adjust),
+    p.adjust = -log10( p.adjust),
+    p.adjust = ifelse(p.adjust >= 10, 10, p.adjust),
+    site = factor(site, levels = c('PT', 'Lung', 'Liver')),
+    group = factor(group, levels = selected_clusters$group)
+  ) %>% 
+  ggplot(aes(group, Description, color = GeneProp, size = p.adjust)) +
+  geom_point() +
+  scale_color_distiller(palette = "Purples", na.value = "grey70", direction = 1) +
+  scale_y_discrete(labels = default_labeller(70)) +
+  scale_x_discrete(position = "top") +
+  scale_size(range = c(1, 5)) +
+  labs(y = '', x = '') +
+  facet_grid(cols = vars(site), rows = vars(jc_sim_cl), scale = 'free', space = 'free') +
+  # facet_grid(rows = vars(jc_sim_cl), scale = 'free', space = 'free') +
+  theme(
+    panel.border = element_rect(color = "black", fill = NA, size = 1),
+    # axis.text.x=element_blank(),
+    axis.ticks.x=element_blank(),
+    axis.line.x = element_blank(),
+    strip.background = element_blank()#,
+    # strip.text.y = element_blank()
+    )
+```
+
+
+
+## Site markers enrichment
+
+### ORA - C2.CP.REACTOME and GO:BP
+
+Over-enrichment analysis using genes with a mean AUC ≥ 0.25 in the score markers results.
+
+```{r site-marker-gse-enricher-c2reactome_gobp-conf}
+gse_list <- gse_site_auc
+test_type <- 'enricher'
+gset_collection <- 'msigdb.m2.cp.reactome'
+direction <- 'abs'
+p_thrs <- 0.01
+topn <- 20
+
+# Load all the results
+gse_df <- foreach(i = names(gse_list), .combine = rbind) %do% {
+  i_1 <- gse_list[[i]][[test_type]][[direction]][[gset_collection]]@result %>% 
+    mutate(group = i)
+  i_2 <- gse_list[[i]][['enrichGO']][[direction]][['BP']]@result %>% 
+    filter(simplify) %>% 
+    dplyr::select(-simplify) %>% 
+    mutate(group = i)
+  rbind(i_1, i_2)
+} %>% 
+  mutate(
+    group = factor(group, c('primary_tumor', 'lung', 'liver')),
+    Description = clean_msigdb_names(Description) %>% tolower() %>% str_to_title,
+    Description = ifelse(grepl("^GO:", ID), paste0("GO:", Description), Description)
+  ) 
+
+# Select topn by group in selected gset
+top_by_group <- foreach(i = names(gse_list), .combine = c) %do% {
+  gse_df %>% 
+    filter(group == i) %>% 
+    filter(p.adjust < p_thrs) %>% 
+    arrange(p.adjust) %>% pull(Description) %>%
+    head(topn)
+}
+
+# Data frame to plot
+res_top <- gse_df %>% 
+  filter(Description %in% top_by_group) %>% 
+  mutate(log.p.adjust = -log10(p.adjust))
+
+# Rows and column orders by hclust
+use_mat <- res_top %>% 
+  dplyr::select(Description, log.p.adjust, group) %>% 
+  pivot_wider(names_from = group, values_from = log.p.adjust) %>% 
+  column_to_rownames('Description')
+use_mat[is.na(use_mat)] <- 0
+
+row_hclust <- hclust(dist(use_mat))
+row_hclust_labels <- row_hclust$labels[row_hclust$order]
+
+col_hclust <- hclust(dist(t(use_mat)))
+col_hclust_labels <- col_hclust$labels[col_hclust$order]
+
+use_mat <- use_mat[row_hclust_labels,col_hclust_labels]
+
+# GSET clusters by kmeans using silhouette
+use_kmax <- ifelse(nrow(use_mat) <= 20, nrow(use_mat)-2, 20)
+nb_clust <- fviz_nbclust(use_mat, kmeans, method = "silhouette", k.max = use_kmax)
+silhouette_best_k <- nb_clust$data %>% slice_max(y) %>% pull(clusters) %>% as.character %>% as.numeric
+# silhouette_best_k <- 5
+kmeans_mat <- kmeans(use_mat, silhouette_best_k, nstart = 25)
+kmeans_mat_df <- kmeans_mat$cluster %>%
+  data.frame %>%
+  set_names('kcluster') %>%
+  rownames_to_column('Description') %>%
+  mutate(kcluster = as.character(kcluster))
+
+
+# Order factors by hclust
+res_top %<>% 
+  left_join(kmeans_mat_df) %>% 
+  mutate(
+    Description = factor(Description, levels = row_hclust_labels),
+    group = fct_relevel(group, col_hclust_labels)
+  )
+
+# Calculate jaccard similarity matrix
+gset_collection <- foreach(i = levels(res_top$Description)) %do% {
+  res_top %>% filter(Description == i) %>% pull(geneID) %>% 
+    paste(collapse = '/') %>% 
+    strsplit('/') %>% unlist %>% unique
+}
+names(gset_collection) <- levels(res_top$Description)
+
+use_terms <- res_top$Description %>% unique
+jc_matrix <- pairwise_terms_jc(gset_collection[use_terms])
+```
+
+#### Results table
+```{r site-marker-gse-enricher-c2reactome_gobp-table}
+gse_df %>% 
+  filter(p.adjust < p_thrs) %>% 
+  arrange(desc(p.adjust)) %>% 
+  dplyr::select(group, ID:p.adjust, Count:GeneProp, geneID)  %>%
+  dplyr::rename(site = group) %>% 
+  datatable(., 
+            rownames = FALSE, 
+            filter = 'top', 
+            caption = 'Results from over enrichment analysis',
+            extensions = 'Buttons', 
+            options = list(
+              dom = 'Blfrtip',
+              buttons = c('csv', 'excel')
+            ))  %>% 
+  formatRound(c('GeneProp'), digits = 2) %>%
+  formatSignif(c('pvalue', 'p.adjust'), digits = 3)
+```
+
+#### Number of gene sets
+```{r site-marker-gse-enricher-c2reactome_gobp-ngset}
+gse_df %>% 
+  filter(p.adjust < p_thrs) %>% 
+  group_by(group) %>% 
+  summarise(n = n()) %>% 
+  ggplot(aes(x=group, y=n)) +
+  geom_bar(stat="identity", color = 'black')+
+  geom_text(aes(label=n), vjust=1.4, color="white", size=geom_text_size)+
+  labs(
+    x = 'Site',
+    y = 'Number of gene sets',
+    title = 'Number of significant gene sets by site',
+    caption = paste("Adjusted P value <", p_thrs)
+    
+  )
+```
+
+#### Gene-set similarity matrix
+Heatmap showing the pair-wise similarity matrix of top `r topn` gene sets with an adjusted P value < `r p_thrs` in each gene group. Heatmap colors represent the Jaccard similarity coefficient.
+
+```{r site-marker-gse-enricher-c2reactome_gobp-jcmatrix, fig.width=7.2, fig.asp=1.9}
+col_fun <- colorRamp2(seq(0, 1, length.out = 4), brewer.pal(4, "GnBu"))
+n_split <- 9
+
+use_mat <- jc_matrix
+colnames(use_mat) <- colnames(use_mat) %>% clean_msigdb_names %>% tolower() %>% str_to_title %>% ep_str_wrap(70)
+rownames(use_mat) <- rownames(use_mat) %>% clean_msigdb_names %>% tolower() %>% str_to_title %>% ep_str_wrap(70)
+
+ha_top <- HeatmapAnnotation(
+  foo = anno_block(
+    # labels = c("Translation", "Cell division"),
+    labels = 1:n_split,
+    labels_gp = gpar(col = "black", fontsize = 8),
+    gp = gpar(lwd = 0, lty = 0))
+  )
+
+ht <- Heatmap(
+  use_mat,
+  name = 'Jaccard index',
+  column_split = n_split,
+  row_split = n_split,
+  column_title = NULL,
+  row_title = NULL,
+  col = col_fun,
+  show_column_dend = FALSE,
+  show_column_names = FALSE,
+  border = TRUE,
+  top_annotation = ha_top,
+  heatmap_legend_param = list(title_gp = gpar(fontsize = 8),labels_gp = gpar(fontsize = 8)),
+  width = unit(7, "cm"))
+
+ht = draw(ht)
+
+cat("\n\n")
+
+# Extract term order according to hclust from similarity heatmap
+row_order <- row_order(ht) %>% set_names(1:n_split)
+term_similarity_clusters <- foreach(i=names(row_order), .combine = rbind) %do% {
+  data.frame(
+    jc_sim_cl = i, 
+    row_order = row_order[[i]], 
+    Description =  rownames(jc_matrix)[row_order[[i]]]
+  )
+}
+
+# Add similarity order to data for dot plot
+res_top %<>% left_join(term_similarity_clusters)
+```
+
+
+
+#### Dotplots
+The plots below show the top `r topn` gene sets with an adjusted P value < `r p_thrs` in each gene group
+```{r site-marker-gse-enricher-c2reactome_gobp-dotplot, fig.width = 6, fig.asp = 1.4}
+res_top %>%
+  # Combine similarity clusters
+  mutate(
+    jc_sim_cl = ifelse(jc_sim_cl %in% c('1'), 'Translation', jc_sim_cl),
+    jc_sim_cl = ifelse(jc_sim_cl %in% c('3','5','6'), 'Energy\ngeneration', jc_sim_cl),
+    jc_sim_cl = ifelse(jc_sim_cl %in% c('4', '8'), 'Cell stress', jc_sim_cl),
+    jc_sim_cl = factor(
+      jc_sim_cl,
+      levels = c('Translation', 'Energy\ngeneration', 'Cell stress', '2', '7', '9')
+      ),
+
+    p.adjust = ifelse(p.adjust > 0.05, 1, p.adjust),
+    p.adjust = -log10( p.adjust),
+    p.adjust = ifelse(p.adjust >= 10, 10, p.adjust),
+    group = recode(group, primary_tumor = "PT", lung = "Lung", liver = "Liver"),
+    group = factor(group, levels = c('PT', 'Lung', 'Liver'))
+  ) %>% 
+  ggplot(aes(group, Description, color = GeneProp, size = p.adjust)) +
+  geom_point() +
+  scale_color_distiller(palette = "Purples", na.value = "grey70", direction = 1) +
+  scale_y_discrete(labels = default_labeller(70)) +
+  scale_x_discrete(position = "top") +
+  scale_size(range = c(1, 5)) +
+  labs(y = '', x = '') +
+  # facet_grid(rows = vars(cluster), scale = 'free', space = 'free') +
+  # facet_grid(rows = vars(kcluster), scale = 'free', space = 'free') +
+  facet_grid(rows = vars(jc_sim_cl), scale = 'free', space = 'free') +
+  theme(
+    panel.border = element_rect(color = "black", fill = NA, size = 1),
+    # axis.text.x=element_blank(),
+    axis.ticks.x=element_blank(),
+    axis.line.x = element_blank(),
+    strip.background = element_blank()#,
+    # strip.text.y = element_blank()
+    )
+```

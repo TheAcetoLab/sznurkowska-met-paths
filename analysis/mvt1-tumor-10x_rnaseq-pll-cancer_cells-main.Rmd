@@ -1,5 +1,5 @@
 ---
-title: "p26532_o28268 10x RNA-seq analysis of cancer and microenvironment in tumor and mets"
+title: "10x RNA-seq analysis of MVT1 cancer and microenvironment in tumor and mets"
 subtitle: "Analysis of cancer cells in primary tumor, lung and liver metastases"
 author: "Francesc Castro-Giner"
 date: '`r format(Sys.Date(), "%B %d, %Y")`'

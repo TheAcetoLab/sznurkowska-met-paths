@@ -17,8 +17,25 @@ editor_options:
 
 ## MVT1 10x data
 - [Quality control](mvt1-tumor-10x_rnaseq-qc.html)
-- [Cancer cells](mvt1-tumor-10x_rnaseq-pll-cancer_cells-main.html)
 
-### MVT1 cancer cells
+### MVT1 cancel cells
+- [MVT1 cancer cells](mvt1-tumor-10x_rnaseq-pll-cancer_cells-main.html)
 
-### NGS niche cells
+### TME analysis
+- [NSG niche cells](mvt1-tumor-10x_rnaseq-pll-cancer_cells-main.html)
+- [NSG myeloid cells](mvt1-tumor-10x_rnaseq-pll-tme-myeloid.html)
+
+### Cytokine ligands-receptor interaction 
+- [LRdb](mvt1-tumor-10x_rnaseq-pll-lr-lrdb.html)
+- [CellPhoneDB](mvt1-tumor-10x_rnaseq-pll-lr-cellphonedb.html)
+- [Combined analysis](mvt1-tumor-10x_rnaseq-pll-lr-combined.html)
+
+### NSG normal liver and lung
+- [Quality control](nsg-normal-10x_rnaseq-qc.html)
+- [Main analysis](nsg-normal-10x_rnaseq-main.html)
+- [Comparison to niche cells](mvt1-tumor-nsg-normal-10x_rnaseq-comparison.html)
+- [Differential gene expression analysis comapred to niche cells](mvt1-tumor-nsg-normal-10x_rnaseq-deg.html)
+
+## BR16 10x data
+- [Quality control](br16-10x_rnaseq-qc.html)
+- [Main analysis](br16-10x_rnaseq-cancer_cells-main.html)

@@ -1,0 +1,2646 @@
+<!DOCTYPE html>
+
+<html>
+
+<head>
+
+<meta charset="utf-8" />
+<meta name="generator" content="pandoc" />
+<meta http-equiv="X-UA-Compatible" content="IE=EDGE" />
+
+
+<meta name="author" content="Francesc Castro-Giner" />
+
+<meta name="date" content="2025-02-07" />
+
+<title>10x RNA-seq analysis of MVT1 cancer and microenvironment in tumor and mets</title>
+
+<script src="site_libs/header-attrs-2.25/header-attrs.js"></script>
+<script src="site_libs/jquery-3.6.0/jquery-3.6.0.min.js"></script>
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<link href="site_libs/bootstrap-3.3.5/css/cosmo.min.css" rel="stylesheet" />
+<script src="site_libs/bootstrap-3.3.5/js/bootstrap.min.js"></script>
+<script src="site_libs/bootstrap-3.3.5/shim/html5shiv.min.js"></script>
+<script src="site_libs/bootstrap-3.3.5/shim/respond.min.js"></script>
+<style>h1 {font-size: 34px;}
+       h1.title {font-size: 38px;}
+       h2 {font-size: 30px;}
+       h3 {font-size: 24px;}
+       h4 {font-size: 18px;}
+       h5 {font-size: 16px;}
+       h6 {font-size: 12px;}
+       code {color: inherit; background-color: rgba(0, 0, 0, 0.04);}
+       pre:not([class]) { background-color: white }</style>
+<script src="site_libs/jqueryui-1.13.2/jquery-ui.min.js"></script>
+<link href="site_libs/tocify-1.9.1/jquery.tocify.css" rel="stylesheet" />
+<script src="site_libs/tocify-1.9.1/jquery.tocify.js"></script>
+<script src="site_libs/navigation-1.1/tabsets.js"></script>
+<script src="site_libs/navigation-1.1/codefolding.js"></script>
+<link href="site_libs/highlightjs-9.12.0/textmate.css" rel="stylesheet" />
+<script src="site_libs/highlightjs-9.12.0/highlight.js"></script>
+<script src="site_libs/kePrint-0.0.1/kePrint.js"></script>
+<link href="site_libs/lightable-0.0.1/lightable.css" rel="stylesheet" />
+<script src="site_libs/htmlwidgets-1.6.2/htmlwidgets.js"></script>
+<link href="site_libs/datatables-css-0.0.0/datatables-crosstalk.css" rel="stylesheet" />
+<script src="site_libs/datatables-binding-0.30/datatables.js"></script>
+<link href="site_libs/dt-core-1.13.4/css/jquery.dataTables.min.css" rel="stylesheet" />
+<link href="site_libs/dt-core-1.13.4/css/jquery.dataTables.extra.css" rel="stylesheet" />
+<script src="site_libs/dt-core-1.13.4/js/jquery.dataTables.min.js"></script>
+<script src="site_libs/jszip-1.13.4/jszip.min.js"></script>
+<link href="site_libs/dt-ext-buttons-1.13.4/css/buttons.dataTables.min.css" rel="stylesheet" />
+<script src="site_libs/dt-ext-buttons-1.13.4/js/dataTables.buttons.min.js"></script>
+<script src="site_libs/dt-ext-buttons-1.13.4/js/buttons.html5.min.js"></script>
+<script src="site_libs/dt-ext-buttons-1.13.4/js/buttons.colVis.min.js"></script>
+<script src="site_libs/dt-ext-buttons-1.13.4/js/buttons.print.min.js"></script>
+<link href="site_libs/nouislider-7.0.10/jquery.nouislider.min.css" rel="stylesheet" />
+<script src="site_libs/nouislider-7.0.10/jquery.nouislider.min.js"></script>
+<link href="site_libs/selectize-0.12.0/selectize.bootstrap3.css" rel="stylesheet" />
+<script src="site_libs/selectize-0.12.0/selectize.min.js"></script>
+<link href="site_libs/crosstalk-1.2.0/css/crosstalk.min.css" rel="stylesheet" />
+<script src="site_libs/crosstalk-1.2.0/js/crosstalk.min.js"></script>
+<link href="site_libs/font-awesome-6.4.2/css/all.min.css" rel="stylesheet" />
+<link href="site_libs/font-awesome-6.4.2/css/v4-shims.min.css" rel="stylesheet" />
+
+<link rel="icon" href="https://github.com/workflowr/workflowr-assets/raw/main/img/reproducible.png">
+<!-- Add a small amount of space between sections. -->
+<style type="text/css">
+div.section {
+  padding-top: 12px;
+}
+</style>
+
+
+
+<style type="text/css">
+  code{white-space: pre-wrap;}
+  span.smallcaps{font-variant: small-caps;}
+  span.underline{text-decoration: underline;}
+  div.column{display: inline-block; vertical-align: top; width: 50%;}
+  div.hanging-indent{margin-left: 1.5em; text-indent: -1.5em;}
+  ul.task-list{list-style: none;}
+    </style>
+
+<style type="text/css">code{white-space: pre;}</style>
+<script type="text/javascript">
+if (window.hljs) {
+  hljs.configure({languages: []});
+  hljs.initHighlightingOnLoad();
+  if (document.readyState && document.readyState === "complete") {
+    window.setTimeout(function() { hljs.initHighlighting(); }, 0);
+  }
+}
+</script>
+
+
+
+
+
+
+
+
+
+<style type = "text/css">
+.main-container {
+  max-width: 940px;
+  margin-left: auto;
+  margin-right: auto;
+}
+img {
+  max-width:100%;
+}
+.tabbed-pane {
+  padding-top: 12px;
+}
+.html-widget {
+  margin-bottom: 20px;
+}
+button.code-folding-btn:focus {
+  outline: none;
+}
+summary {
+  display: list-item;
+}
+details > summary > p:only-child {
+  display: inline;
+}
+pre code {
+  padding: 0;
+}
+</style>
+
+
+<style type="text/css">
+.dropdown-submenu {
+  position: relative;
+}
+.dropdown-submenu>.dropdown-menu {
+  top: 0;
+  left: 100%;
+  margin-top: -6px;
+  margin-left: -1px;
+  border-radius: 0 6px 6px 6px;
+}
+.dropdown-submenu:hover>.dropdown-menu {
+  display: block;
+}
+.dropdown-submenu>a:after {
+  display: block;
+  content: " ";
+  float: right;
+  width: 0;
+  height: 0;
+  border-color: transparent;
+  border-style: solid;
+  border-width: 5px 0 5px 5px;
+  border-left-color: #cccccc;
+  margin-top: 5px;
+  margin-right: -10px;
+}
+.dropdown-submenu:hover>a:after {
+  border-left-color: #adb5bd;
+}
+.dropdown-submenu.pull-left {
+  float: none;
+}
+.dropdown-submenu.pull-left>.dropdown-menu {
+  left: -100%;
+  margin-left: 10px;
+  border-radius: 6px 0 6px 6px;
+}
+</style>
+
+<script type="text/javascript">
+// manage active state of menu based on current page
+$(document).ready(function () {
+  // active menu anchor
+  href = window.location.pathname
+  href = href.substr(href.lastIndexOf('/') + 1)
+  if (href === "")
+    href = "index.html";
+  var menuAnchor = $('a[href="' + href + '"]');
+
+  // mark the anchor link active (and if it's in a dropdown, also mark that active)
+  var dropdown = menuAnchor.closest('li.dropdown');
+  if (window.bootstrap) { // Bootstrap 4+
+    menuAnchor.addClass('active');
+    dropdown.find('> .dropdown-toggle').addClass('active');
+  } else { // Bootstrap 3
+    menuAnchor.parent().addClass('active');
+    dropdown.addClass('active');
+  }
+
+  // Navbar adjustments
+  var navHeight = $(".navbar").first().height() + 15;
+  var style = document.createElement('style');
+  var pt = "padding-top: " + navHeight + "px; ";
+  var mt = "margin-top: -" + navHeight + "px; ";
+  var css = "";
+  // offset scroll position for anchor links (for fixed navbar)
+  for (var i = 1; i <= 6; i++) {
+    css += ".section h" + i + "{ " + pt + mt + "}\n";
+  }
+  style.innerHTML = "body {" + pt + "padding-bottom: 40px; }\n" + css;
+  document.head.appendChild(style);
+});
+</script>
+
+<!-- tabsets -->
+
+<style type="text/css">
+.tabset-dropdown > .nav-tabs {
+  display: inline-table;
+  max-height: 500px;
+  min-height: 44px;
+  overflow-y: auto;
+  border: 1px solid #ddd;
+  border-radius: 4px;
+}
+
+.tabset-dropdown > .nav-tabs > li.active:before, .tabset-dropdown > .nav-tabs.nav-tabs-open:before {
+  content: "\e259";
+  font-family: 'Glyphicons Halflings';
+  display: inline-block;
+  padding: 10px;
+  border-right: 1px solid #ddd;
+}
+
+.tabset-dropdown > .nav-tabs.nav-tabs-open > li.active:before {
+  content: "\e258";
+  font-family: 'Glyphicons Halflings';
+  border: none;
+}
+
+.tabset-dropdown > .nav-tabs > li.active {
+  display: block;
+}
+
+.tabset-dropdown > .nav-tabs > li > a,
+.tabset-dropdown > .nav-tabs > li > a:focus,
+.tabset-dropdown > .nav-tabs > li > a:hover {
+  border: none;
+  display: inline-block;
+  border-radius: 4px;
+  background-color: transparent;
+}
+
+.tabset-dropdown > .nav-tabs.nav-tabs-open > li {
+  display: block;
+  float: none;
+}
+
+.tabset-dropdown > .nav-tabs > li {
+  display: none;
+}
+</style>
+
+<!-- code folding -->
+<style type="text/css">
+.code-folding-btn { margin-bottom: 4px; }
+</style>
+
+
+
+<style type="text/css">
+
+#TOC {
+  margin: 25px 0px 20px 0px;
+}
+@media (max-width: 768px) {
+#TOC {
+  position: relative;
+  width: 100%;
+}
+}
+
+@media print {
+.toc-content {
+  /* see https://github.com/w3c/csswg-drafts/issues/4434 */
+  float: right;
+}
+}
+
+.toc-content {
+  padding-left: 30px;
+  padding-right: 40px;
+}
+
+div.main-container {
+  max-width: 1200px;
+}
+
+div.tocify {
+  width: 20%;
+  max-width: 260px;
+  max-height: 85%;
+}
+
+@media (min-width: 768px) and (max-width: 991px) {
+  div.tocify {
+    width: 25%;
+  }
+}
+
+@media (max-width: 767px) {
+  div.tocify {
+    width: 100%;
+    max-width: none;
+  }
+}
+
+.tocify ul, .tocify li {
+  line-height: 20px;
+}
+
+.tocify-subheader .tocify-item {
+  font-size: 0.90em;
+}
+
+.tocify .list-group-item {
+  border-radius: 0px;
+}
+
+
+</style>
+
+
+
+</head>
+
+<body>
+
+
+<div class="container-fluid main-container">
+
+
+<!-- setup 3col/9col grid for toc_float and main content  -->
+<div class="row">
+<div class="col-xs-12 col-sm-4 col-md-3">
+<div id="TOC" class="tocify">
+</div>
+</div>
+
+<div class="toc-content col-xs-12 col-sm-8 col-md-9">
+
+
+
+
+<div class="navbar navbar-default  navbar-fixed-top" role="navigation">
+  <div class="container">
+    <div class="navbar-header">
+      <button type="button" class="navbar-toggle collapsed" data-toggle="collapse" data-bs-toggle="collapse" data-target="#navbar" data-bs-target="#navbar">
+        <span class="icon-bar"></span>
+        <span class="icon-bar"></span>
+        <span class="icon-bar"></span>
+      </button>
+      <a class="navbar-brand" href="index.html">met-paths</a>
+    </div>
+    <div id="navbar" class="navbar-collapse collapse">
+      <ul class="nav navbar-nav">
+        <li>
+  <a href="index.html">Home</a>
+</li>
+<li>
+  <a href="about.html">About</a>
+</li>
+<li>
+  <a href="license.html">License</a>
+</li>
+      </ul>
+      <ul class="nav navbar-nav navbar-right">
+        <li>
+  <a href="https://github.com/TheAcetoLab/sznurkowska-met-paths">
+    <span class="fab fa-github"></span>
+     
+    Source code
+  </a>
+</li>
+      </ul>
+    </div><!--/.nav-collapse -->
+  </div><!--/.container -->
+</div><!--/.navbar -->
+
+<div id="header">
+
+<div class="btn-group pull-right float-right">
+<button type="button" class="btn btn-default btn-xs btn-secondary btn-sm dropdown-toggle" data-toggle="dropdown" data-bs-toggle="dropdown" aria-haspopup="true" aria-expanded="false"><span>Code</span> <span class="caret"></span></button>
+<ul class="dropdown-menu dropdown-menu-right" style="min-width: 50px;">
+<li><a id="rmd-show-all-code" href="#">Show All Code</a></li>
+<li><a id="rmd-hide-all-code" href="#">Hide All Code</a></li>
+</ul>
+</div>
+
+
+
+<h1 class="title toc-ignore">10x RNA-seq analysis of MVT1 cancer and
+microenvironment in tumor and mets</h1>
+<h3 class="subtitle">Analysis of TME cells in primary tumor, lung and
+liver metastases</h3>
+<h4 class="author">Francesc Castro-Giner</h4>
+<h4 class="date">February 07, 2025</h4>
+
+</div>
+
+
+<p>
+<button type="button" class="btn btn-default btn-workflowr btn-workflowr-report" data-toggle="collapse" data-target="#workflowr-report">
+<span class="glyphicon glyphicon-list" aria-hidden="true"></span>
+workflowr <span class="glyphicon glyphicon-ok text-success"
+aria-hidden="true"></span>
+</button>
+</p>
+<div id="workflowr-report" class="collapse">
+<ul class="nav nav-tabs">
+<li class="active">
+<a data-toggle="tab" href="#summary">Summary</a>
+</li>
+<li>
+<a data-toggle="tab" href="#checks"> Checks <span
+class="glyphicon glyphicon-ok text-success" aria-hidden="true"></span>
+</a>
+</li>
+<li>
+<a data-toggle="tab" href="#versions">Past versions</a>
+</li>
+</ul>
+<div class="tab-content">
+<div id="summary" class="tab-pane fade in active">
+<p>
+<strong>Last updated:</strong> 2025-02-07
+</p>
+<p>
+<strong>Checks:</strong> <span
+class="glyphicon glyphicon-ok text-success" aria-hidden="true"></span> 7
+<span class="glyphicon glyphicon-exclamation-sign text-danger"
+aria-hidden="true"></span> 0
+</p>
+<p>
+<strong>Knit directory:</strong> <code>sznurkowska-met-paths/</code>
+<span class="glyphicon glyphicon-question-sign" aria-hidden="true"
+title="This is the local directory in which the code in this file was executed.">
+</span>
+</p>
+<p>
+This reproducible <a href="https://rmarkdown.rstudio.com">R Markdown</a>
+analysis was created with <a
+  href="https://github.com/workflowr/workflowr">workflowr</a> (version
+1.7.1). The <em>Checks</em> tab describes the reproducibility checks
+that were applied when the results were created. The <em>Past
+versions</em> tab lists the development history.
+</p>
+<hr>
+</div>
+<div id="checks" class="tab-pane fade">
+<div id="workflowr-checks" class="panel-group">
+<div class="panel panel-default">
+<div class="panel-heading">
+<p class="panel-title">
+<a data-toggle="collapse" data-parent="#workflowr-checks" href="#strongRMarkdownfilestronguptodate">
+<span class="glyphicon glyphicon-ok text-success"
+aria-hidden="true"></span> <strong>R Markdown file:</strong> up-to-date
+</a>
+</p>
+</div>
+<div id="strongRMarkdownfilestronguptodate"
+class="panel-collapse collapse">
+<div class="panel-body">
+<p>Great! Since the R Markdown file has been committed to the Git
+repository, you know the exact version of the code that produced these
+results.</p>
+</div>
+</div>
+</div>
+<div class="panel panel-default">
+<div class="panel-heading">
+<p class="panel-title">
+<a data-toggle="collapse" data-parent="#workflowr-checks" href="#strongEnvironmentstrongempty">
+<span class="glyphicon glyphicon-ok text-success"
+aria-hidden="true"></span> <strong>Environment:</strong> empty </a>
+</p>
+</div>
+<div id="strongEnvironmentstrongempty" class="panel-collapse collapse">
+<div class="panel-body">
+<p>Great job! The global environment was empty. Objects defined in the
+global environment can affect the analysis in your R Markdown file in
+unknown ways. For reproduciblity it’s best to always run the code in an
+empty environment.</p>
+</div>
+</div>
+</div>
+<div class="panel panel-default">
+<div class="panel-heading">
+<p class="panel-title">
+<a data-toggle="collapse" data-parent="#workflowr-checks" href="#strongSeedstrongcodesetseed20250206code">
+<span class="glyphicon glyphicon-ok text-success"
+aria-hidden="true"></span> <strong>Seed:</strong>
+<code>set.seed(20250206)</code> </a>
+</p>
+</div>
+<div id="strongSeedstrongcodesetseed20250206code"
+class="panel-collapse collapse">
+<div class="panel-body">
+<p>The command <code>set.seed(20250206)</code> was run prior to running
+the code in the R Markdown file. Setting a seed ensures that any results
+that rely on randomness, e.g. subsampling or permutations, are
+reproducible.</p>
+</div>
+</div>
+</div>
+<div class="panel panel-default">
+<div class="panel-heading">
+<p class="panel-title">
+<a data-toggle="collapse" data-parent="#workflowr-checks" href="#strongSessioninformationstrongrecorded">
+<span class="glyphicon glyphicon-ok text-success"
+aria-hidden="true"></span> <strong>Session information:</strong>
+recorded </a>
+</p>
+</div>
+<div id="strongSessioninformationstrongrecorded"
+class="panel-collapse collapse">
+<div class="panel-body">
+<p>Great job! Recording the operating system, R version, and package
+versions is critical for reproducibility.</p>
+</div>
+</div>
+</div>
+<div class="panel panel-default">
+<div class="panel-heading">
+<p class="panel-title">
+<a data-toggle="collapse" data-parent="#workflowr-checks" href="#strongCachestrongnone">
+<span class="glyphicon glyphicon-ok text-success"
+aria-hidden="true"></span> <strong>Cache:</strong> none </a>
+</p>
+</div>
+<div id="strongCachestrongnone" class="panel-collapse collapse">
+<div class="panel-body">
+<p>Nice! There were no cached chunks for this analysis, so you can be
+confident that you successfully produced the results during this
+run.</p>
+</div>
+</div>
+</div>
+<div class="panel panel-default">
+<div class="panel-heading">
+<p class="panel-title">
+<a data-toggle="collapse" data-parent="#workflowr-checks" href="#strongFilepathsstrongrelative">
+<span class="glyphicon glyphicon-ok text-success"
+aria-hidden="true"></span> <strong>File paths:</strong> relative </a>
+</p>
+</div>
+<div id="strongFilepathsstrongrelative" class="panel-collapse collapse">
+<div class="panel-body">
+<p>Great job! Using relative paths to the files within your workflowr
+project makes it easier to run your code on other machines.</p>
+</div>
+</div>
+</div>
+<div class="panel panel-default">
+<div class="panel-heading">
+<p class="panel-title">
+<a data-toggle="collapse" data-parent="#workflowr-checks" href="#strongRepositoryversionstrongahrefhttpsgithubcomTheAcetoLabsznurkowskametpathstreea8144d90a244a0ca580a4cab237dcf73f9a43f81targetblanka8144d9a">
+<span class="glyphicon glyphicon-ok text-success"
+aria-hidden="true"></span> <strong>Repository version:</strong>
+<a href="https://github.com/TheAcetoLab/sznurkowska-met-paths/tree/a8144d90a244a0ca580a4cab237dcf73f9a43f81" target="_blank">a8144d9</a>
+</a>
+</p>
+</div>
+<div
+id="strongRepositoryversionstrongahrefhttpsgithubcomTheAcetoLabsznurkowskametpathstreea8144d90a244a0ca580a4cab237dcf73f9a43f81targetblanka8144d9a"
+class="panel-collapse collapse">
+<div class="panel-body">
+<p>
+Great! You are using Git for version control. Tracking code development
+and connecting the code version to the results is critical for
+reproducibility.
+</p>
+<p>
+The results in this page were generated with repository version
+<a href="https://github.com/TheAcetoLab/sznurkowska-met-paths/tree/a8144d90a244a0ca580a4cab237dcf73f9a43f81" target="_blank">a8144d9</a>.
+See the <em>Past versions</em> tab to see a history of the changes made
+to the R Markdown and HTML files.
+</p>
+<p>
+Note that you need to be careful to ensure that all relevant files for
+the analysis have been committed to Git prior to generating the results
+(you can use <code>wflow_publish</code> or
+<code>wflow_git_commit</code>). workflowr only checks the R Markdown
+file, but you know if there are other scripts or data files that it
+depends on. Below is the status of the Git repository when the results
+were generated:
+</p>
+<pre><code>
+Ignored files:
+    Ignored:    .Rhistory
+    Ignored:    .Rproj.user/
+    Ignored:    data/patients/
+    Ignored:    data/resources/
+    Ignored:    data/rnaseq/
+    Ignored:    data/seer/
+    Ignored:    output/p26532_o26674/
+    Ignored:    output/p26532_o28268/
+    Ignored:    output/p26532_o28268_o34980/
+    Ignored:    output/p26532_o34980/
+
+Untracked files:
+    Untracked:  analysis/br16-10x_rnaseq-cancer_cells-main.Rmd
+    Untracked:  analysis/br16-10x_rnaseq-qc.Rmd
+    Untracked:  analysis/mvt1-tumor-10x_rnaseq-pll-lr-cellphonedb.Rmd
+    Untracked:  analysis/mvt1-tumor-10x_rnaseq-pll-lr-combined.Rmd
+    Untracked:  analysis/mvt1-tumor-10x_rnaseq-pll-lr-lrdb.Rmd
+    Untracked:  analysis/mvt1-tumor-10x_rnaseq-qc.Rmd
+    Untracked:  analysis/mvt1-tumor-nsg-normal-10x_rnaseq-comparison.Rmd
+    Untracked:  analysis/mvt1-tumor-nsg-normal-10x_rnaseq-pseudobulk-deg.Rmd
+    Untracked:  analysis/nsg-normal-10x_rnaseq-main.Rmd
+    Untracked:  analysis/nsg-normal-10x_rnaseq-qc.Rmd
+    Untracked:  analysis/templates/
+    Untracked:  code/R-functions/
+    Untracked:  configuration/
+    Untracked:  workflowr_update.R
+
+Unstaged changes:
+    Modified:   .gitignore
+    Modified:   sznurkowska-met-paths.Rproj
+
+</code></pre>
+<p>
+Note that any generated files, e.g. HTML, png, CSS, etc., are not
+included in this status report because it is ok for generated content to
+have uncommitted changes.
+</p>
+</div>
+</div>
+</div>
+</div>
+<hr>
+</div>
+<div id="versions" class="tab-pane fade">
+<p>
+These are the previous versions of the repository in which changes were
+made to the R Markdown
+(<code>analysis/mvt1-tumor-10x_rnaseq-pll-tme-main.Rmd</code>) and HTML
+(<code>docs/mvt1-tumor-10x_rnaseq-pll-tme-main.html</code>) files. If
+you’ve configured a remote Git repository (see
+<code>?wflow_git_remote</code>), click on the hyperlinks in the table
+below to view the files as they were in that past version.
+</p>
+<div class="table-responsive">
+<table class="table table-condensed table-hover">
+<thead>
+<tr>
+<th>
+File
+</th>
+<th>
+Version
+</th>
+<th>
+Author
+</th>
+<th>
+Date
+</th>
+<th>
+Message
+</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>
+Rmd
+</td>
+<td>
+<a href="https://github.com/TheAcetoLab/sznurkowska-met-paths/blob/a8144d90a244a0ca580a4cab237dcf73f9a43f81/analysis/mvt1-tumor-10x_rnaseq-pll-tme-main.Rmd" target="_blank">a8144d9</a>
+</td>
+<td>
+Francesc Castro-Giner
+</td>
+<td>
+2025-02-07
+</td>
+<td>
+Add mvt1 tme analysis
+</td>
+</tr>
+</tbody>
+</table>
+</div>
+<hr>
+</div>
+</div>
+</div>
+<div id="load-libraries-additional-functions-and-data"
+class="section level2" number="1">
+<h2><span class="header-section-number">1</span> Load libraries,
+additional functions and data</h2>
+<p>Setup environment</p>
+<pre class="r"><code>knitr::opts_chunk$set(results=&#39;asis&#39;, echo=TRUE, message=FALSE, warning=FALSE, error=FALSE, fig.align = &#39;center&#39;, fig.width = 3.5, fig.asp = 0.618, dpi = 600, dev = c(&quot;png&quot;, &quot;pdf&quot;), fig.showtext = FALSE)
+
+options(stringsAsFactors = FALSE)
+
+use_seed &lt;- 1100101
+set.seed(use_seed)
+
+if(!dir.exists(params$output_dir))
+  dir.create(params$output_dir, recursive = TRUE, showWarnings = FALSE)</code></pre>
+<p>Load packages</p>
+<pre class="r"><code>library(tidyverse)
+library(showtext)
+library(foreach)
+library(DT)
+library(knitr)
+library(kableExtra)
+library(cowplot)
+library(colorblindr)
+library(ggbeeswarm)
+library(arsenal)
+library(RColorBrewer)
+library(ggpubr)
+library(pheatmap)
+library(patchwork)
+library(openxlsx)
+library(magrittr)
+
+library(scater)
+library(DropletUtils)
+library(Seurat)
+library(scran)
+library(BiocSingular)
+library(batchelor)
+library(bluster)
+library(celldex)
+library(SingleR)
+library(scDblFinder)
+library(speckle)
+library(miloR)
+library(ComplexHeatmap)
+library(clusterProfiler)
+library(GSVA)
+library(circlize)</code></pre>
+<p>Set font family for figures</p>
+<pre class="r"><code>font_add(&quot;Helvetica&quot;, &quot;./configuration/fonts/Helvetica.ttc&quot;)
+showtext_auto()</code></pre>
+<p>Load ggplot theme</p>
+<pre class="r"><code>source(&quot;./configuration/rmarkdown/ggplot_theme.R&quot;)
+source(&quot;./configuration/rmarkdown/color_palettes.R&quot;)</code></pre>
+<p>Load utils functions</p>
+<pre class="r"><code>source(&#39;./code/R-functions/heatmap_scale.R&#39;)</code></pre>
+<p>Clean files generated in previous runs</p>
+<pre class="r"><code>rmd_file &lt;- current_input()
+if(!is.null(rmd_file)) {
+  figures_dir &lt;- file.path(&#39;./docs/figure&#39;,rmd_file)
+  if(dir.exists(figures_dir)) {
+    unlink(file.path(figures_dir, &quot;*&quot;))
+  }
+}</code></pre>
+</div>
+<div id="data-processing" class="section level2" number="2">
+<h2><span class="header-section-number">2</span> Data processing</h2>
+<div id="load-sce-after-integration" class="section level3"
+number="2.1">
+<h3><span class="header-section-number">2.1</span> Load SCE after
+integration</h3>
+<p>Here we load SCE object after integration and record TME samples that
+were clustered together with Cancer Cells.</p>
+<pre class="r"><code>sce_int &lt;- readRDS(file.path(params$cellranger_count_dir, &#39;sce_integrated.rds&#39;))
+sr_tabmuris &lt;- readRDS(file.path(&#39;./output/p26532_o28268/p26532_o28268-10x_rnaseq&#39;, &#39;SingleR_tabmuris_annotation-integrated.rds&#39;))
+
+sr_tabmuris$pred_cluster_simplified %&lt;&gt;%
+  dplyr::rename(
+    celltype_tabmuris_cluster_labels = celltype_cluster_labels,
+    celltype_tabmuris_cluster_pruned.labels = celltype_cluster_pruned.labels
+  )
+colData(sce_int) &lt;- colData(sce_int) %&gt;% data.frame %&gt;%
+  mutate(cluster_mnn = as.character(cluster_mnn)) %&gt;%
+  left_join(sr_tabmuris$pred_cluster_simplified) %&gt;%
+  mutate(cluster_mnn = factor(cluster_mnn)) %&gt;%
+  DataFrame
+
+tme_cancer_samples &lt;- colData(sce_int) %&gt;% data.frame %&gt;% 
+  filter(cell_type == &#39;tumor_microenvironment&#39; &amp; (
+             celltype_tabmuris_cluster_pruned.labels == &#39;basal cell&#39; |
+             celltype_tabmuris_cluster_pruned.labels == &#39;luminal epithelial cell of mammary gland&#39; 
+             )
+         ) %&gt;% 
+  mutate(sample_bc = paste(Sample, Barcode, sep = &#39;_&#39;)) %&gt;% 
+  pull(sample_bc)
+
+rm(sce_int)</code></pre>
+</div>
+<div id="batch-integration" class="section level3" number="2.2">
+<h3><span class="header-section-number">2.2</span> Batch
+integration</h3>
+<p>Here we prepare the data for batch correction (next section). First,
+we combine cells from all SCE objects into a single SCE and return
+pre-computed per-gene variance at batch level. Then we adjust for batch
+level library size. Returned object will contain log-normalized
+expression values after adjusting the size factors for systematic
+differences in coverage between</p>
+<p>Before integration, we also remove:</p>
+<ul>
+<li><p>TME cells clustered with cancer cells in the integrative
+analysis</p></li>
+<li><p>Cells from organs not used for this analysis : bone, brain and
+ovary</p></li>
+<li><p>Batch number 3 (03_22_04_25_BM_c_BM_m_Brain_c_Ovary_c): Only
+contains 350 cells (Bone only)</p></li>
+</ul>
+<pre class="r"><code># File paths to SCE files
+sce_files &lt;- system(paste(&quot;find&quot;, params$cellranger_count_dir, &quot;-maxdepth 2 -type f -regex &#39;.*/sce_normalized[.]rds$&#39;&quot;), intern = TRUE) %&gt;% sort
+
+# Define list of anatomical sites to keep
+keep_sites &lt;- c(&#39;liver&#39;, &#39;primary_tumor&#39;, &#39;lung&#39;)
+# Define samples/batches to remove due to low number of cells
+remove_samples &lt;- &#39;03_22_04_25_BM_c_BM_m_Brain_c_Ovary_c&#39;
+
+# Combine all SCE files into sce_comb and generate an combine gene  with pre-computed gene variance 
+if(exists(&#39;sce_comb&#39;)) 
+  rm(sce_comb)
+sce_file &lt;-  sce_files[7]
+precomputed_geneVar &lt;- foreach(sce_file = sce_files) %do% {
+  use_sce &lt;- readRDS(sce_file)
+  # Select TME cells
+  use_sce &lt;- use_sce[,use_sce$cell_type == &#39;tumor_microenvironment&#39;]
+  # Remove TME cells clustered with cancer cells
+  use_sce$sample_bc &lt;- paste(use_sce$Sample, use_sce$Barcode, sep = &#39;_&#39;)
+  use_sce &lt;- use_sce[,!use_sce$sample_bc %in% tme_cancer_samples]
+  # Remove cells from anatomical sites not selected
+  use_sce &lt;- use_sce[,use_sce$site %in% keep_sites]
+  # Exclude Batch 03 : 03_22_04_25_BM_c_BM_m_Brain_c_Ovary_c
+  use_sce &lt;- use_sce[,use_sce$Sample != remove_samples]
+   
+  use_sce$cluster_id_batch &lt;- as.character(use_sce$cluster_id_batch)
+  if(ncol(use_sce) == 0) {
+    NULL
+  } else {
+    # Combine sce
+    if(!exists(&#39;sce_comb&#39;)) {
+      sce_comb &lt;- use_sce
+    } else {
+      new_counts &lt;- cbind(counts(sce_comb), counts(use_sce))
+      new_logcounts &lt;- cbind(logcounts(sce_comb), logcounts(use_sce))
+      new_colData &lt;- rbind(colData(sce_comb), colData(use_sce))
+      sce_comb &lt;- SingleCellExperiment(
+        assays = list(counts = new_counts, logcounts = new_logcounts),
+        colData = new_colData,
+        rowData = rowData(sce_comb)
+      )
+    }
+    metadata(use_sce)$dec
+  }
+}
+metadata(sce_comb)$precomputed_geneVar &lt;- compact(precomputed_geneVar)
+rm(use_sce)
+
+# Modify coldata and rownames
+sce_comb$batch &lt;-  gsub(&quot;_.*&quot;, &quot;&quot;, sce_comb$Sample)
+sce_comb$cluster_id_batch &lt;-  paste(sce_comb$batch, sce_comb$cluster_id_batch, sep = &#39;_&#39;) %&gt;% as.factor()
+
+rownames(sce_comb) &lt;- make.names(rowData(sce_comb)$gene_name, unique = TRUE)
+
+# Rescale each batch to adjust for differences in sequencing depth between batches. The multiBatchNorm() function recomputes log-normalized expression values after adjusting the size factors for systematic differences in coverage between SingleCellExperiment objects. (Size factors only remove biases between cells within a single batch.) This improves the quality of the correction by removing one aspect of the technical differences between batches.
+sce_comb &lt;- multiBatchNorm(sce_comb, batch = sce_comb$Sample, BPPARAM=BiocParallel::MulticoreParam(params$ncores, RNGseed=use_seed))
+
+# Identifying a set of HVGs using stats from all batches.
+combined_dec &lt;- combineVar(metadata(sce_comb)$precomputed_geneVar)
+# combined_hvg &lt;- getTopHVGs(combined_dec, n=5000, row.names = FALSE)
+chosen_hvgs &lt;- combined_dec$bio &gt; 0 &amp; !rowData(sce_comb)$is.mito &amp; !rowData(sce_comb)$is.ribo
+
+# Dimensionality reduction
+sce_comb &lt;- runPCA(sce_comb, subset_row=chosen_hvgs, BSPARAM=BiocSingular::RandomParam(), BPPARAM=BiocParallel::MulticoreParam(params$ncores, RNGseed=use_seed))
+sce_comb$cluster_id  &lt;- clusterCells(sce_comb, use.dimred=&quot;PCA&quot;, BLUSPARAM=SNNGraphParam(k=25, type=&quot;rank&quot;, cluster.fun=&quot;louvain&quot;, BPPARAM=BiocParallel::MulticoreParam(params$ncores, RNGseed=use_seed)))
+tab &lt;- table(Cluster=sce_comb$cluster_id, Batch=sce_comb$Sample)
+sce_comb &lt;- runTSNE(sce_comb, dimred=&quot;PCA&quot;, BPPARAM=BiocParallel::MulticoreParam(params$ncores, RNGseed=use_seed))
+sce_comb &lt;- runUMAP(sce_comb, dimred=&quot;PCA&quot;, BPPARAM=BiocParallel::MulticoreParam(params$ncores, RNGseed=use_seed))
+
+saveRDS(sce_comb, file.path(params$output_dir, &#39;sce_integrated-tme.rds&#39;))</code></pre>
+</div>
+<div id="additional-doublet-detection" class="section level3"
+number="2.3">
+<h3><span class="header-section-number">2.3</span> Additional doublet
+detection</h3>
+<p><a href="https://github.com/plger/scDblFinder">scDblFinder</a> : We
+suggest using the cluster-based approach when the datasets are
+segregated into clear clusters, and the random one for the rest
+(e.g. developmental trajectories).</p>
+<pre class="r"><code>sce_comb &lt;- scDblFinder(
+  sce_comb, 
+  samples =sce_comb$Sample, 
+  BPPARAM=BiocParallel::MulticoreParam(params$ncores/2, RNGseed=use_seed))
+
+saveRDS(sce_comb, file.path(params$output_dir, &#39;sce_integrated-tme.rds&#39;))</code></pre>
+</div>
+<div id="batch-correction-using-mnn" class="section level3"
+number="2.4">
+<h3><span class="header-section-number">2.4</span> Batch correction
+using MNN</h3>
+<p>Here, we actually perform the correction itself. We also perform the
+clustering.</p>
+<pre class="r"><code>if(!exists(&#39;sce_comb&#39;))
+  sce_comb &lt;- readRDS(file.path(params$output_dir, &#39;sce_integrated-tme.rds&#39;))
+
+# Identifying a set of HVGs using stats from all batches.
+combined_dec &lt;- combineVar(metadata(sce_comb)$precomputed_geneVar)
+# combined_hvg &lt;- getTopHVGs(combined_dec, n=2000, row.names = FALSE)
+chosen_hvgs &lt;- combined_dec$bio &gt; 0 &amp; !rowData(sce_comb)$is.mito &amp; !rowData(sce_comb)$is.ribo
+
+# MNN correction
+sce_mnn &lt;- fastMNN(sce_comb,
+                   batch = sce_comb$Sample, 
+                   auto.merge = TRUE, 
+                      subset.row=chosen_hvgs, 
+                      BSPARAM=RandomParam(deferred=TRUE), 
+                      BPPARAM=BiocParallel::MulticoreParam(params$ncores, RNGseed=use_seed),
+                      d=50, k=20)
+# colData(sce_mnn) &lt;- colData(sce_comb)
+rowData(sce_mnn) &lt;-  rowData(sce_comb)[chosen_hvgs,]
+
+# Dimensionality reduction
+sce_mnn &lt;- runTSNE(sce_mnn, dimred=&quot;corrected&quot;, BPPARAM=BiocParallel::MulticoreParam(params$ncores, RNGseed=use_seed))
+sce_mnn &lt;- runUMAP(sce_mnn, dimred=&quot;corrected&quot;, BPPARAM=BiocParallel::MulticoreParam(params$ncores, RNGseed=use_seed))
+
+# Clustering using corrected values
+sce_mnn$cluster_mnn  &lt;- clusterCells(sce_mnn, use.dimred=&quot;corrected&quot;, BLUSPARAM=SNNGraphParam(k=25, type=&quot;rank&quot;, cluster.fun=&quot;louvain&quot;, BPPARAM=BiocParallel::MulticoreParam(params$ncores, RNGseed=use_seed)))
+
+# Add corrected info to sce_comb
+sce_comb$cluster_mnn &lt;- sce_mnn$cluster_mnn
+reducedDim(sce_comb, &#39;corrected&#39;) &lt;- reducedDim(sce_mnn, &#39;corrected&#39;)
+reducedDim(sce_comb, &#39;TSNE_corrected&#39;) &lt;- reducedDim(sce_mnn, &#39;TSNE&#39;)
+reducedDim(sce_comb, &#39;UMAP_corrected&#39;) &lt;- reducedDim(sce_mnn, &#39;UMAP&#39;)
+# plotUMAP(sce_mnn, color_by = &#39;cluster_mnn&#39;)
+
+# MNN-related diagnostic examining the variance in the differences in expression between MNN pairs.
+use_sce &lt;- sce_comb
+rownames(use_sce) &lt;- make.names(rowData(use_sce)$gene_name, unique = TRUE)
+metadata(sce_mnn)$mnnDeltaVariance &lt;- mnnDeltaVariance(
+  use_sce,
+  pairs=metadata(sce_mnn)$merge.info$pairs, 
+  BPPARAM=BiocParallel::MulticoreParam(params$ncores, RNGseed=use_seed)
+  )
+rm(use_sce)
+
+# Add cell by type to plot 
+if(!exists(&#39;ref_mouse_imm&#39;))
+  ref_mouse_imm &lt;- celldex::ImmGenData()
+
+pred_cluster &lt;- SingleR(test=sce_comb, 
+                ref=ref_mouse_imm, 
+                labels=ref_mouse_imm$label.main, 
+                clusters = sce_mnn$cluster_mnn,
+                de.method=&quot;classic&quot;,
+                BPPARAM=BiocParallel::MulticoreParam(params$ncores, RNGseed=use_seed))
+
+pred_cluster_simplified &lt;- pred_cluster %&gt;% 
+  data.frame %&gt;% 
+  dplyr::select(labels,pruned.labels) %&gt;% 
+  dplyr::rename(celltype_cluster_labels = labels, celltype_cluster_pruned.labels = pruned.labels) %&gt;% 
+  rownames_to_column(&#39;cluster_mnn&#39;)
+
+colData(sce_comb) &lt;- colData(sce_comb) %&gt;% data.frame %&gt;%
+  mutate(cluster_mnn = as.character(cluster_mnn)) %&gt;%
+  left_join(pred_cluster_simplified) %&gt;%
+  mutate(cluster_mnn = factor(cluster_mnn)) %&gt;%
+  DataFrame
+
+colData(sce_mnn) &lt;- colData(sce_mnn) %&gt;% data.frame %&gt;%
+  mutate(cluster_mnn = as.character(cluster_mnn)) %&gt;%
+  left_join(pred_cluster_simplified) %&gt;%
+  mutate(cluster_mnn = factor(cluster_mnn)) %&gt;%
+  DataFrame
+
+# Save SCE objects
+saveRDS(sce_mnn, file.path(params$output_dir, &#39;sce_integrated_corrected-keep_doublets-tme.rds&#39;))
+saveRDS(sce_comb, file.path(params$output_dir, &#39;sce_integrated-tme.rds&#39;))</code></pre>
+</div>
+<div id="remove-clusters" class="section level3" number="2.5">
+<h3><span class="header-section-number">2.5</span> Remove clusters</h3>
+<p>Here we remove - Clusters with a high proportion of doublets as
+detected in the <a href="#additional-doublet-detection">Additional
+doublet detection</a> - Clusters with high proportion of mitochondrial
+reads AND low library size</p>
+<pre class="r"><code>if(!exists(&#39;sce_comb&#39;))
+  sce_comb &lt;- readRDS(file.path(params$output_dir, &#39;sce_integrated-tme.rds&#39;))
+
+# keep a version with doublets for QC visualization
+saveRDS(sce_comb, file.path(params$output_dir, &#39;sce_integrated-keep_doublets-tme.rds&#39;))
+
+# plotReducedDim(sce_comb, dimred = &#39;UMAP_corrected&#39;, color_by = &#39;scDblFinder.score&#39;)
+# plotReducedDim(sce_comb, dimred = &#39;UMAP_corrected&#39;, color_by = &#39;scDblFinder.class&#39;)
+
+# Clusters to remove by doublet detection
+cl_to_remove_dbl &lt;- table(sce_comb$cluster_mnn, sce_comb$scDblFinder.class) %&gt;% 
+  prop.table(1) %&gt;% data.frame %&gt;% set_names(c(&#39;Cluster&#39;, &#39;Class&#39;, &#39;Proportion&#39;)) %&gt;% 
+  filter(Class == &#39;doublet&#39; &amp; Proportion &gt; 0.25) %&gt;% 
+  pull(Cluster) %&gt;% as.character
+
+# Clusters to remove by mito pct and library size
+cl_to_remove_q &lt;- colData(sce_comb) %&gt;% data.frame %&gt;% 
+  group_by(cluster_mnn) %&gt;% 
+  summarise(
+    m_mito_pct = median(subsets_Mito_percent),
+    m_sum = median(sum)
+    ) %&gt;% 
+  filter(m_mito_pct &gt; 15 &amp; m_sum &lt; 3000) %&gt;% 
+  pull(cluster_mnn) %&gt;% as.character
+
+# Save SCE without doublets clusters
+cl_to_remove &lt;- c(cl_to_remove_dbl, cl_to_remove_q)
+sce_comb &lt;- sce_comb[,!sce_comb$cluster_mnn %in% cl_to_remove]
+sce_comb$cluster_mnn_doublets &lt;- droplevels(sce_comb$cluster_mnn)
+saveRDS(sce_comb, file.path(params$output_dir, &#39;sce_integrated-tme.rds&#39;))</code></pre>
+</div>
+<div id="batch-correction-after-doublet-removal-using-mnn"
+class="section level3" number="2.6">
+<h3><span class="header-section-number">2.6</span> Batch correction
+after doublet removal using MNN</h3>
+<p>Here, we actually perform the correction itself. We also perform the
+clustering.</p>
+<pre class="r"><code>if(!exists(&#39;sce_comb&#39;))
+  sce_comb &lt;- readRDS(file.path(params$output_dir, &#39;sce_integrated-tme.rds&#39;))
+
+# Identifying a set of HVGs using stats from all batches.
+combined_dec &lt;- combineVar(metadata(sce_comb)$precomputed_geneVar)
+# combined_hvg &lt;- getTopHVGs(combined_dec, n=2000, row.names = FALSE)
+chosen_hvgs &lt;- combined_dec$bio &gt; 0 &amp; !rowData(sce_comb)$is.mito &amp; !rowData(sce_comb)$is.ribo
+
+# MNN correction
+sce_mnn &lt;- fastMNN(sce_comb,
+                   batch = sce_comb$Sample, 
+                   auto.merge = TRUE, 
+                      subset.row=chosen_hvgs, 
+                      BSPARAM=RandomParam(deferred=TRUE), 
+                      BPPARAM=BiocParallel::MulticoreParam(params$ncores, RNGseed=use_seed),
+                      d=50, k=20)
+# colData(sce_mnn) &lt;- colData(sce_comb)
+rowData(sce_mnn) &lt;-  rowData(sce_comb)[chosen_hvgs,]
+
+# Dimensionality reduction
+sce_mnn &lt;- runTSNE(sce_mnn, dimred=&quot;corrected&quot;, BPPARAM=BiocParallel::MulticoreParam(params$ncores, RNGseed=use_seed))
+sce_mnn &lt;- runUMAP(sce_mnn, dimred=&quot;corrected&quot;, BPPARAM=BiocParallel::MulticoreParam(params$ncores, RNGseed=use_seed))
+
+# Clustering using corrected values
+sce_mnn$cluster_mnn  &lt;- clusterCells(sce_mnn, use.dimred=&quot;corrected&quot;, BLUSPARAM=SNNGraphParam(k=25, type=&quot;rank&quot;, cluster.fun=&quot;louvain&quot;, BPPARAM=BiocParallel::MulticoreParam(params$ncores, RNGseed=use_seed)))
+
+# Add corrected info to sce_comb
+sce_comb$cluster_mnn &lt;- sce_mnn$cluster_mnn
+reducedDim(sce_comb, &#39;corrected&#39;) &lt;- reducedDim(sce_mnn, &#39;corrected&#39;)
+reducedDim(sce_comb, &#39;TSNE_corrected&#39;) &lt;- reducedDim(sce_mnn, &#39;TSNE&#39;)
+reducedDim(sce_comb, &#39;UMAP_corrected&#39;) &lt;- reducedDim(sce_mnn, &#39;UMAP&#39;)
+# plotUMAP(sce_mnn, color_by = &#39;cluster_mnn&#39;)
+
+# MNN-related diagnostic examining the variance in the differences in expression between MNN pairs.
+use_sce &lt;- sce_comb
+rownames(use_sce) &lt;- make.names(rowData(use_sce)$gene_name, unique = TRUE)
+metadata(sce_mnn)$mnnDeltaVariance &lt;- mnnDeltaVariance(
+  use_sce,
+  pairs=metadata(sce_mnn)$merge.info$pairs, 
+  BPPARAM=BiocParallel::MulticoreParam(params$ncores, RNGseed=use_seed)
+  )
+rm(use_sce)
+
+# Save SCE objects
+saveRDS(sce_mnn, file.path(params$output_dir, &#39;sce_integrated_corrected-tme.rds&#39;))
+saveRDS(sce_comb, file.path(params$output_dir, &#39;sce_integrated-tme.rds&#39;))</code></pre>
+</div>
+<div id="annotate-cell-type" class="section level3" number="2.7">
+<h3><span class="header-section-number">2.7</span> Annotate cell
+type</h3>
+<div id="gsva" class="section level4" number="2.7.1">
+<h4><span class="header-section-number">2.7.1</span> GSVA</h4>
+<p><a href="https://www.ncbi.nlm.nih.gov/pmc/articles/PMC6720041/"
+class="uri">https://www.ncbi.nlm.nih.gov/pmc/articles/PMC6720041/</a></p>
+<pre class="r"><code>if(!exists(&#39;sce_comb&#39;))
+  sce_comb &lt;- readRDS(file.path(params$cellranger_count_dir, &#39;sce_integrated-tme.rds&#39;))
+
+# Load gene-sets datasets
+msigdb_m8_gmt &lt;- read.gmt(&quot;./data/resources/MSigDB/v2022.1.Mm/m8.all.v2022.1.Mm.symbols.gmt&quot;)
+msigdb_go_bp_gmt &lt;- read.gmt(&quot;./data/resources/MSigDB/v2022.1.Mm/m5.go.bp.v2022.1.Mm.symbols.gmt&quot;)
+msigdb_m2_cp_gmt &lt;- read.gmt(&quot;./data/resources/MSigDB/v2022.1.Mm/m2.cp.v2022.1.Mm.symbols.gmt&quot;)
+msigdb_m8 &lt;- foreach(iterm = levels(msigdb_m8_gmt$term)) %do% {
+  msigdb_m8_gmt %&gt;% filter(term == iterm) %&gt;% pull(gene)
+}
+msigdb_go_bp &lt;- foreach(iterm = levels(msigdb_go_bp_gmt$term)) %do% {
+  msigdb_go_bp_gmt %&gt;% filter(term == iterm) %&gt;% pull(gene)
+}
+msigdb_m2 &lt;- foreach(iterm = levels(msigdb_m2_cp_gmt$term)) %do% {
+  msigdb_m2_cp_gmt %&gt;% filter(term == iterm) %&gt;% pull(gene)
+}
+
+
+gsva_res_m8 &lt;- gsva(logcounts(sce_comb), 
+                   method = &#39;ssgsea&#39;,
+                   gset.idx.list = msigdb_m8, 
+                   min.sz = 5, 
+                   max.sz = 700, 
+                   verbose = FALSE,
+                   BPPARAM = BiocParallel::MulticoreParam(params$ncores, RNGseed=use_seed)
+                   )
+
+gsva_res_gobp &lt;- gsva(logcounts(sce_comb), 
+                   method = &#39;ssgsea&#39;,
+                   gset.idx.list = msigdb_go_bp, 
+                   min.sz = 5, 
+                   max.sz = 700, 
+                   verbose = FALSE,
+                   BPPARAM = BiocParallel::MulticoreParam(params$ncores, RNGseed=use_seed)
+                   )
+
+gsva_res_m2 &lt;- gsva(logcounts(sce_comb), 
+                   method = &#39;ssgsea&#39;,
+                   gset.idx.list = msigdb_m2, 
+                   min.sz = 5, 
+                   max.sz = 700, 
+                   verbose = FALSE,
+                   BPPARAM = BiocParallel::MulticoreParam(params$ncores, RNGseed=use_seed)
+                   )</code></pre>
+</div>
+<div id="single-r-mousernaseqdata" class="section level4"
+number="2.7.2">
+<h4><span class="header-section-number">2.7.2</span> Single R
+MouseRNAseqData</h4>
+<p>We are using the MouseRNAseqData from celldex. I tried using the
+MouseRNAseqData together with the ImmGenData, ust most of the cells were
+assigned better to MouseRNAseqData and the label duplicate between both
+datasets can lead to a reduction of the delta score for some cells,
+pruning correct labels due to the low delta score.</p>
+<pre class="r"><code>if(!exists(&#39;sce_comb&#39;))
+  sce_comb &lt;- readRDS(file.path(params$cellranger_count_dir, &#39;sce_integrated-tme.rds&#39;))
+
+ref_mouse_general &lt;- celldex::MouseRNAseqData()
+
+# SingleR::The default settings of this function are based on the assumption that ref contains or bulk data. If it contains single-cell data, this usually requires a different de.method choice. Read the Note in ?trainSingleR for more details.
+
+# Run SingleR at cell level with main label
+pred &lt;- SingleR(test=sce_comb, 
+                ref=ref_mouse_general, 
+                labels=ref_mouse_general$label.main, 
+                de.method=&quot;wilcox&quot;,
+                BPPARAM=BiocParallel::MulticoreParam(params$ncores, RNGseed=use_seed))
+
+# Run SingleR at cluster level with main label
+pred_cluster &lt;- SingleR(test=sce_comb, 
+                        clusters=sce_comb$cluster_mnn, 
+                        ref=ref_mouse_general, 
+                        labels=ref_mouse_general$label.main, 
+                        BPPARAM=BiocParallel::MulticoreParam(params$ncores, RNGseed=use_seed))
+
+pred_cluster_simplified &lt;- pred_cluster %&gt;% 
+  data.frame %&gt;% 
+  dplyr::select(labels,pruned.labels) %&gt;% 
+  dplyr::rename(celltype_cluster_labels = labels, celltype_cluster_pruned.labels = pruned.labels) %&gt;% 
+  rownames_to_column(&#39;cluster_mnn&#39;)
+
+# Run SingleR at cluster level for each sample, with main label
+pred_cluster_batch &lt;- SingleR(test=sce_comb, 
+                              clusters=sce_comb$cluster_id_batch, 
+                              ref=ref_mouse_general, 
+                              labels=ref_mouse_general$label.main,
+                              BPPARAM=BiocParallel::MulticoreParam(params$ncores, RNGseed=use_seed))
+
+pred_cluster_batch_simplified &lt;- pred_cluster_batch %&gt;%  
+  data.frame %&gt;% 
+  dplyr::select(labels,pruned.labels) %&gt;% 
+  dplyr::rename( celltype_cluster_batch_labels = labels,  celltype_cluster_batch_pruned.labels = pruned.labels) %&gt;% 
+  rownames_to_column(&#39;cluster_id_batch&#39;)
+
+# Save results
+res &lt;- list(
+  pred = pred,
+  pred_cluster = pred_cluster,
+  pred_cluster_simplified = pred_cluster_simplified,
+  pred_cluster_batch = pred_cluster_batch,
+  pred_cluster_batch_simplified = pred_cluster_batch_simplified
+)
+saveRDS(res, file.path(params$output_dir, &#39;SingleR_MouseRNAseqData_annotation-tme.rds&#39;))
+rm(res)</code></pre>
+</div>
+<div id="singler---tabula-muris" class="section level4" number="2.7.3">
+<h4><span class="header-section-number">2.7.3</span> SingleR - Tabula
+muris</h4>
+<p>Annotation using <a
+href="https://figshare.com/articles/dataset/Robject_files_for_tissues_processed_by_Seurat/5821263">mouse
+tabula muris</a>, selecting organs used in this analysis. See more
+details about the data <a
+href="https://figshare.com/articles/dataset/Robject_files_for_tissues_processed_by_Seurat/5821263">here</a>
+and <a href="https://tabula-muris.ds.czbiohub.org/">here</a>.</p>
+<p>First we generate SCE object from tabula muris seurat objects</p>
+<pre class="r"><code>if(file.exists(&#39;./data/tabula_muris/sce.rds&#39;)) {
+  sce_tmuris &lt;- readRDS(&#39;./data/tabula_muris/sce.rds&#39;)
+} else {
+  list_tabmuris_files &lt;- list.files(path = &#39;./data/tabula_muris&#39;, pattern = &#39;[droplet|facs].*Robj&#39;, full.names = TRUE)
+  list_tabmuris_files &lt;- grep(&#39;brain|ovary&#39;, list_tabmuris_files, value = TRUE, ignore.case = TRUE, invert = TRUE)
+  if(exists(&#39;sce_tmuris&#39;)) 
+    rm(sce_tmuris)
+  i &lt;- list_tabmuris_files[[1]]
+  for(i in list_tabmuris_files) {
+    print(i)
+    load(i)
+    tiss.up &lt;- UpdateSeuratObject(tiss)
+    rm(tiss)
+    tiss.sce &lt;- as.SingleCellExperiment(tiss.up)
+    rm(tiss.up)
+    saveRDS(tiss.sce, gsub(&quot;.Robj&quot;, &quot;.sce.rds&quot;, i))
+    if(!exists(&#39;sce_tmuris&#39;)) {
+      sce_tmuris &lt;- tiss.sce
+    } else {
+      shared_rows &lt;- intersect(rownames(sce_tmuris), rownames(tiss.sce))
+      shared_coldata &lt;- intersect(colnames(colData(sce_tmuris)), colnames(colData(tiss.sce)))
+      colData(sce_tmuris) &lt;- colData(sce_tmuris)[,shared_coldata]
+      colData(tiss.sce) &lt;- colData(tiss.sce)[,shared_coldata]
+      sce_tmuris &lt;- cbind(sce_tmuris[shared_rows,], tiss.sce[shared_rows,])
+    }
+    rm(tiss.sce)
+  }
+  saveRDS(sce_tmuris, &#39;./data/tabula_muris/sce.rds&#39;)
+}</code></pre>
+<pre class="r"><code>if(!exists(&#39;sce_comb&#39;))
+  sce_comb &lt;- readRDS(file.path(params$output_dir, &#39;sce_integrated-tme.rds&#39;))
+if(!exists(&#39;sce_tmuris&#39;))
+  sce_tmuris &lt;- readRDS(&#39;./data/tabula_muris/sce.rds&#39;)
+
+# Run SingleR at cell level with main label
+pred &lt;- SingleR(
+  test=sce_comb,
+  ref=sce_tmuris,
+  labels=sce_tmuris$cell_ontology_class,
+  de.method=&quot;wilcox&quot;,
+  aggr.ref = TRUE,
+  BPPARAM=BiocParallel::MulticoreParam(params$ncores, RNGseed=use_seed)
+  )
+
+# Run SingleR at cluster level with main label
+# pred_tabmuris_cluster &lt;- SingleR(
+#   test=sce_comb,
+#   ref=sce_tmuris,
+#   labels=sce_tmuris$cell_ontology_class,
+#   clusters=sce_comb$cluster_mnn,
+#   de.method=&quot;wilcox&quot;,
+#   aggr.ref = TRUE,
+#   BPPARAM=BiocParallel::MulticoreParam(params$ncores, RNGseed=use_seed)
+# ) 
+# 
+# pred_tabmuris_cluster_simplified &lt;- pred_tabmuris_cluster %&gt;% 
+#   data.frame %&gt;% 
+#   dplyr::select(labels,pruned.labels) %&gt;% 
+#   dplyr::rename(celltype_tabmuris_cluster_labels = labels, celltype_tabmuris_cluster_pruned.labels = pruned.labels) %&gt;% 
+#   rownames_to_column(&#39;cluster_mnn&#39;)
+
+# Run SingleR at cluster level with main label
+# pred_tabmuris_cluster_batch &lt;- SingleR(
+#   test=sce_comb,
+#   ref=sce_tmuris,
+#   labels=sce_tmuris$cell_ontology_class,
+#   clusters=sce_comb$cluster_id_batch,
+#   de.method=&quot;wilcox&quot;,
+#   aggr.ref = TRUE,
+#   BPPARAM=BiocParallel::MulticoreParam(params$ncores, RNGseed=use_seed)
+# ) 
+# 
+# pred_tabmuris_cluster_batch_simplified &lt;- pred_tabmuris_cluster_batch %&gt;%  
+#   data.frame %&gt;% 
+#   dplyr::select(labels:pruned.labels) %&gt;% 
+#   dplyr::rename( celltype_tabmuris_cluster_batch_labels = labels,  celltype_tabmuris_cluster_batch_pruned.labels = pruned.labels) %&gt;% 
+#   rownames_to_column(&#39;cluster_id_batch&#39;)
+
+
+# Save results
+res &lt;- list(
+  pred = pred
+  # pred_cluster = pred_tabmuris_cluster,
+  # pred_cluster_simplified = pred_tabmuris_cluster_simplified,
+  # pred_cluster_batch = pred_tabmuris_cluster_batch,
+  # pred_cluster_batch_simplified = pred_tabmuris_cluster_batch_simplified
+)
+saveRDS(res, file.path(params$output_dir, &#39;SingleR_tabmuris_annotation-tme.rds&#39;))
+rm(res)</code></pre>
+</div>
+<div id="single-r-immgendata" class="section level4" number="2.7.4">
+<h4><span class="header-section-number">2.7.4</span> Single R
+ImmGenData</h4>
+<p>We are using the ImmGenData from celldex: normalized expression
+values of 830 microarray samples of pure mouse immune cells, generated
+by the <a href="https://www.immgen.org/">Immunologic Genome Project
+(ImmGen)</a>. This is currently the most highly resolved immune
+reference - possibly overwhelmingly so, given the granularity of the
+fine labels.</p>
+<pre class="r"><code>if(!exists(&#39;sce_comb&#39;))
+  sce_comb &lt;- readRDS(file.path(params$cellranger_count_dir, &#39;sce_integrated-tme.rds&#39;))
+if(!exists(&#39;ref_mouse_imm&#39;))
+  ref_mouse_imm &lt;- celldex::ImmGenData()
+
+# SingleR::The default settings of this function are based on the assumption that ref contains or bulk data. If it contains single-cell data, this usually requires a different de.method choice. Read the Note in ?trainSingleR for more details.
+
+# Run SingleR at cell level with main label
+pred &lt;- SingleR(test=sce_comb, 
+                ref=ref_mouse_imm, 
+                labels=ref_mouse_imm$label.main, 
+                de.method=&quot;classic&quot;,
+                BPPARAM=BiocParallel::MulticoreParam(params$ncores, RNGseed=use_seed))
+  
+# Run SingleR at cell level with main label
+pred_fine &lt;- SingleR(test=sce_comb, 
+                ref=ref_mouse_imm, 
+                labels=ref_mouse_imm$label.fine, 
+                de.method=&quot;classic&quot;,
+                BPPARAM=BiocParallel::MulticoreParam(params$ncores, RNGseed=use_seed))
+
+
+# Run SingleR at cluster level with main label
+pred_cluster &lt;- SingleR(test=sce_comb, 
+                        clusters=sce_comb$cluster_mnn, 
+                        ref=ref_mouse_imm, 
+                        labels=ref_mouse_imm$label.main, 
+                        BPPARAM=BiocParallel::MulticoreParam(params$ncores, RNGseed=use_seed))
+
+pred_cluster_simplified &lt;- pred_cluster %&gt;% 
+  data.frame %&gt;% 
+  dplyr::select(labels,pruned.labels) %&gt;% 
+  dplyr::rename(celltype_cluster_labels = labels, celltype_cluster_pruned.labels = pruned.labels) %&gt;% 
+  rownames_to_column(&#39;cluster_mnn&#39;)
+
+# Save results
+res &lt;- list(
+  pred = pred,
+  pred_fine = pred_fine,
+  pred_cluster = pred_cluster,
+  pred_cluster_simplified = pred_cluster_simplified
+)
+saveRDS(res, file.path(params$output_dir, &#39;SingleR_ImmGenData_annotation-tme.rds&#39;))
+rm(res)</code></pre>
+</div>
+</div>
+<div id="markers-detection" class="section level3" number="2.8">
+<h3><span class="header-section-number">2.8</span> Markers
+detection</h3>
+<p>We identify the genes that drive separation between clusters and cell
+types. These marker genes allow us to assign biological meaning to each
+cluster based on their functional annotation. We added batch as a
+blocking factor to the model. The block argument works for all effect
+sizes shown above and is robust to differences in the log-fold changes
+or variance between batches. However, it assumes that each pair of
+clusters is present in at least one batch. In scenarios where cells from
+two clusters never co-occur in the same batch, the associated pairwise
+comparison will be impossible and is ignored during calculation of
+summary statistics.</p>
+<pre class="r"><code>marker_info &lt;- list()
+
+if(!exists(&#39;sce_comb&#39;))
+  sce_comb &lt;- readRDS(file.path(params$output_dir, &#39;sce_integrated-tme.rds&#39;))
+if(!exists(&#39;sr_immgen&#39;))
+  sr_immgen &lt;- readRDS(file.path(params$output_dir, &#39;SingleR_ImmGenData_annotation-tme.rds&#39;))
+
+sce_comb$celltype_immgen_pruned.labels &lt;- sr_immgen$pred$pruned.labels
+sce_comb$celltype_immgen.labels &lt;- sr_immgen$pred$labels
+sce_comb$celltype_immgen_pruned.labels.fine &lt;- sr_immgen$pred_fine$pruned.labels
+sce_comb$celltype_immgen.labels.fine &lt;- sr_immgen$pred_fine$labels
+
+# Cluster markers
+marker_info$cluster_markers &lt;- scoreMarkers(
+  sce_comb, 
+  groups = sce_comb$cluster_mnn, 
+  block = sce_comb$batch,
+  lfc=1, 
+  full.stats=TRUE,
+  row.data=rowData(sce_comb)[,c(&#39;gene_name&#39;, &#39;is.mito&#39;, &#39;is.ribo&#39;),drop=FALSE], 
+  BPPARAM=BiocParallel::MulticoreParam(params$ncores, RNGseed=use_seed)
+)
+
+# Cell type markers for ImmGen
+marker_info$celltype_markers &lt;- scoreMarkers(
+  sce_comb, 
+  groups = sce_comb$celltype_immgen_pruned.labels, 
+  block = sce_comb$batch,
+  lfc=1, 
+  full.stats=TRUE,
+  row.data=rowData(sce_comb)[,c(&#39;gene_name&#39;, &#39;is.mito&#39;, &#39;is.ribo&#39;),drop=FALSE], 
+  BPPARAM=BiocParallel::MulticoreParam(params$ncores, RNGseed=use_seed)
+)
+
+
+# Site markers for each cell type from ImmGen
+ct_label &lt;- &#39;celltype_immgen_pruned.labels&#39;
+## Remove low abundant cell types 
+keep_labels &lt;- table(colData(sce_comb)[[ct_label]]) %&gt;% data.frame %&gt;% filter(Freq &gt;= 100) %&gt;% pull(Var1)
+## Iterate by cell type
+use_label &lt;- keep_labels[6]
+marker_info$site_celltype_markers &lt;- foreach(use_label = keep_labels) %do% {
+  use_cols &lt;- colData(sce_comb)[[ct_label]] %in%  use_label
+  use_sce &lt;- sce_comb[,use_cols]
+  scoreMarkers(
+    use_sce, 
+    groups = use_sce$site, 
+    block = use_sce$batch,
+    lfc=0.5, 
+    full.stats=TRUE,
+    row.data=rowData(sce_comb)[,c(&#39;gene_name&#39;, &#39;is.mito&#39;, &#39;is.ribo&#39;),drop=FALSE], 
+    BPPARAM=BiocParallel::MulticoreParam(params$ncores, RNGseed=use_seed)
+    )
+}
+names(marker_info$site_celltype_markers) &lt;- keep_labels
+
+# Lung-liver markers for each cell type from ImmGen
+ct_label &lt;- &#39;celltype_immgen_pruned.labels&#39;
+## Keep only lung and liver
+use_sce &lt;- sce_comb[,sce_comb$site %in% c(&#39;liver&#39;, &#39;lung&#39;)]
+## Remove low abundant cell types 
+keep_labels &lt;- table(colData(use_sce)[[ct_label]]) %&gt;% data.frame %&gt;% filter(Freq &gt;= 100) %&gt;% pull(Var1)
+## Iterate by cell type
+use_label &lt;- keep_labels[6]
+marker_info$lung_liver_celltype_markers &lt;- foreach(use_label = keep_labels) %do% {
+  use_cols &lt;- colData(use_sce)[[ct_label]] %in%  use_label
+  use_sce_i &lt;- use_sce[,use_cols]
+  scoreMarkers(
+    use_sce_i, 
+    groups = use_sce_i$site, 
+    block = use_sce_i$batch,
+    lfc=0.5, 
+    full.stats=TRUE,
+    row.data=rowData(use_sce_i)[,c(&#39;gene_name&#39;, &#39;is.mito&#39;, &#39;is.ribo&#39;),drop=FALSE], 
+    BPPARAM=BiocParallel::MulticoreParam(params$ncores, RNGseed=use_seed)
+    )
+}
+names(marker_info$lung_liver_celltype_markers) &lt;- keep_labels
+rm(use_sce)
+rm(use_sce_i)
+
+saveRDS(marker_info, file.path(params$output_dir, &#39;scoreMarkers.rds&#39;))</code></pre>
+</div>
+<div id="load-data" class="section level3" number="2.9">
+<h3><span class="header-section-number">2.9</span> Load data</h3>
+<pre class="r"><code>sce_comb &lt;- readRDS(file.path(params$output_dir, &#39;sce_integrated-tme.rds&#39;))
+sce_mnn &lt;- readRDS(file.path(params$output_dir, &#39;sce_integrated_corrected-tme.rds&#39;))
+# sce_subcl &lt;- readRDS(file.path(params$output_dir, &#39;subcluster1_iannot.rds&#39;))
+# sce_subcl_scdbl &lt;- readRDS(file.path(params$output_dir, &#39;subcluster1_iannot_scdbl.rds&#39;))
+# sce_cc &lt;- readRDS(file.path(params$cellranger_count_dir, &#39;sce_integrated-cancer_cell.rds&#39;))
+score_markers &lt;- readRDS(file.path(params$output_dir, &#39;scoreMarkers.rds&#39;))
+# sr_tabmuris &lt;- readRDS(file.path(params$output_dir, &#39;SingleR_tabmuris_annotation-tme.rds&#39;))
+sr_mrnaseq &lt;- readRDS(file.path(params$output_dir, &#39;SingleR_MouseRNAseqData_annotation-tme.rds&#39;))
+sr_immgen &lt;- readRDS(file.path(params$output_dir, &#39;SingleR_ImmGenData_annotation-tme.rds&#39;))
+
+# Add cell type annotation
+sce_comb$celltype_mrnaseq_pruned.labels &lt;- sr_mrnaseq$pred$pruned.labels
+sce_comb$celltype_mrnaseq.labels &lt;- sr_mrnaseq$pred$labels
+# sce_comb$celltype_tabmuris_pruned.labels &lt;- sr_tabmuris$pred$pruned.labels
+# sce_comb$celltype_tabmuris.labels &lt;- sr_tabmuris$pred$labels
+sce_comb$celltype_immgen_pruned.labels &lt;- sr_immgen$pred$pruned.labels
+sce_comb$celltype_immgen.labels &lt;- sr_immgen$pred$labels
+sce_comb$celltype_immgen_pruned.labels.fine &lt;- sr_immgen$pred_fine$pruned.labels
+sce_comb$celltype_immgen.labels.fine &lt;- sr_immgen$pred_fine$labels
+
+# colData(sce_comb) &lt;- colData(sce_comb) %&gt;% data.frame %&gt;%
+#   mutate(cluster_mnn = as.character(cluster_mnn)) %&gt;%
+#   left_join(sr_tabmuris$pred_cluster_simplified) %&gt;%
+#   mutate(cluster_mnn = factor(cluster_mnn)) %&gt;%
+#   DataFrame
+# 
+# Add cluster level annotation using mrnaseq database
+sr_mrnaseq$pred_cluster_simplified %&lt;&gt;%
+  dplyr::rename(
+    celltype_mrnaseq_cluster_labels = celltype_cluster_labels,
+    celltype_mrnaseq_cluster_pruned.labels = celltype_cluster_pruned.labels
+  )
+colData(sce_comb) &lt;- colData(sce_comb) %&gt;% data.frame %&gt;%
+  mutate(cluster_mnn = as.character(cluster_mnn)) %&gt;%
+  left_join(sr_mrnaseq$pred_cluster_simplified) %&gt;%
+  mutate(cluster_mnn = factor(cluster_mnn)) %&gt;%
+  DataFrame
+
+# Add cluster level annotation using immgen database
+sr_immgen$pred_cluster_simplified %&lt;&gt;%
+  dplyr::rename(
+    celltype_immgen_cluster_labels = celltype_cluster_labels,
+    celltype_immgen_cluster_pruned.labels = celltype_cluster_pruned.labels
+  )
+colData(sce_comb) &lt;- colData(sce_comb) %&gt;% data.frame %&gt;%
+  mutate(cluster_mnn = as.character(cluster_mnn)) %&gt;%
+  left_join(sr_immgen$pred_cluster_simplified) %&gt;%
+  mutate(cluster_mnn = factor(cluster_mnn)) %&gt;%
+  DataFrame
+
+
+# Site levels order
+site_caps_ord &lt;- c(&#39;Primary tumor&#39;, &#39;Liver&#39;, &#39;Lung&#39;)
+site_ord &lt;- c(&#39;primary_tumor&#39;, &#39;liver&#39;, &#39;lung&#39;)
+
+
+# Add new colData vars
+colData(sce_comb) &lt;- colData(sce_comb) %&gt;% data.frame %&gt;% 
+  mutate(
+    site_caps = ifelse(site == &#39;liver&#39;, &#39;Liver&#39;, site),
+    site_caps = ifelse(site == &#39;lung&#39;, &#39;Lung&#39;, site_caps),
+    site_caps = ifelse(site == &#39;primary_tumor&#39;, &#39;Primary tumor&#39;, site_caps),
+    site = factor(site, levels = site_ord),
+    site_caps = factor(site_caps, levels = site_caps_ord)
+  ) %&gt;% 
+  DataFrame
+
+# Coordinate colData between sce_comb and sce_mnn
+colData(sce_mnn) &lt;- colData(sce_comb)
+assay(sce_mnn, &#39;logcounts&#39;) &lt;- logcounts(sce_comb[rownames(sce_mnn),])</code></pre>
+</div>
+</div>
+<div id="data-description" class="section level2" number="3">
+<h2><span class="header-section-number">3</span> Data description</h2>
+<div id="site-distribution-per-batch" class="section level3"
+number="3.1">
+<h3><span class="header-section-number">3.1</span> Site distribution per
+batch</h3>
+<pre class="r"><code>table(sce_comb$Sample, sce_comb$site) %&gt;% 
+  kbl(caption = &#39;Number of cells per batch and site.&#39;) %&gt;%
+  kable_paper(bootstrap_options = c(&quot;striped&quot;, &quot;hover&quot;, &quot;condensed&quot;), full_width = F)</code></pre>
+<table class=" lightable-paper" style="font-family: &quot;Arial Narrow&quot;, arial, helvetica, sans-serif; width: auto !important; margin-left: auto; margin-right: auto;">
+<caption>
+Number of cells per batch and site.
+</caption>
+<thead>
+<tr>
+<th style="text-align:left;">
+</th>
+<th style="text-align:right;">
+primary_tumor
+</th>
+<th style="text-align:right;">
+liver
+</th>
+<th style="text-align:right;">
+lung
+</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td style="text-align:left;">
+02_22_04_25_PT_m_lungs_m_Liver_m_Ovary_m
+</td>
+<td style="text-align:right;">
+1562
+</td>
+<td style="text-align:right;">
+1380
+</td>
+<td style="text-align:right;">
+1587
+</td>
+</tr>
+<tr>
+<td style="text-align:left;">
+05_22_04_26_micro_PT_Lung_Liver_BM_Brain
+</td>
+<td style="text-align:right;">
+1197
+</td>
+<td style="text-align:right;">
+1090
+</td>
+<td style="text-align:right;">
+1136
+</td>
+</tr>
+<tr>
+<td style="text-align:left;">
+07_22_04_28_micro_PT_Lung_Liver_BM_Brain_Ovaries
+</td>
+<td style="text-align:right;">
+1498
+</td>
+<td style="text-align:right;">
+1977
+</td>
+<td style="text-align:right;">
+1131
+</td>
+</tr>
+</tbody>
+</table>
+<pre class="r"><code>sites_selected &lt;- sce_comb$site %&gt;% table %&gt;% data.frame %&gt;% dplyr::rename(site = &quot;.&quot;) %&gt;% filter(Freq &gt;= 500) %&gt;% collect %&gt;% .[[&#39;site&#39;]] %&gt;% as.character</code></pre>
+</div>
+<div id="da-sites-selection" class="section level3" number="3.2">
+<h3><span class="header-section-number">3.2</span> DA sites
+selection</h3>
+<p>For differential abundance analysis between sites, we are only using
+sites with more than 500 cells: primary_tumor, liver, lung`</p>
+<pre class="r"><code>res_tab &lt;- table(sce_comb$site) %&gt;% 
+  data.frame %&gt;% dplyr::rename(Site = Var1, `Total cells` = Freq) %&gt;% 
+  mutate(Selected = `Total cells` &gt;= 500) %&gt;% 
+  arrange(desc(`Total cells`))
+
+res_tab %&gt;% 
+  kbl(caption = &#39;Total number of cells per site.&#39;) %&gt;%
+  kable_paper(bootstrap_options = c(&quot;striped&quot;, &quot;hover&quot;, &quot;condensed&quot;), full_width = F)</code></pre>
+<table class=" lightable-paper" style="font-family: &quot;Arial Narrow&quot;, arial, helvetica, sans-serif; width: auto !important; margin-left: auto; margin-right: auto;">
+<caption>
+Total number of cells per site.
+</caption>
+<thead>
+<tr>
+<th style="text-align:left;">
+Site
+</th>
+<th style="text-align:right;">
+Total cells
+</th>
+<th style="text-align:left;">
+Selected
+</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td style="text-align:left;">
+liver
+</td>
+<td style="text-align:right;">
+4447
+</td>
+<td style="text-align:left;">
+TRUE
+</td>
+</tr>
+<tr>
+<td style="text-align:left;">
+primary_tumor
+</td>
+<td style="text-align:right;">
+4257
+</td>
+<td style="text-align:left;">
+TRUE
+</td>
+</tr>
+<tr>
+<td style="text-align:left;">
+lung
+</td>
+<td style="text-align:right;">
+3854
+</td>
+<td style="text-align:left;">
+TRUE
+</td>
+</tr>
+</tbody>
+</table>
+<pre class="r"><code>sites2comp &lt;- res_tab$Site[res_tab$Selected]
+site_combn &lt;- combn(sites2comp, 2, simplify = FALSE)</code></pre>
+</div>
+</div>
+<div id="umap-final" class="section level2" number="4">
+<h2><span class="header-section-number">4</span> UMAP final</h2>
+<div id="site" class="section level3" number="4.1">
+<h3><span class="header-section-number">4.1</span> Site</h3>
+<p>Calculate compact coordinates preserving intracluster shape</p>
+<pre class="r"><code>umap_dim &lt;- reducedDim(sce_mnn, &#39;UMAP&#39;)
+dim_1 &lt;- umap_dim[,1]
+dim_1[dim_1 &gt; 6] &lt;- dim_1[dim_1 &gt; 6] - 5
+dim_1[dim_1 &lt; -10] &lt;- dim_1[dim_1 &lt; -10] + 4
+dim_2 &lt;- umap_dim[,2]
+dim_2[dim_2 &gt; 6] &lt;- dim_2[dim_2 &gt; 6] - 7
+dim_2[dim_2 &lt; -9] &lt;- dim_2[dim_2 &lt; -9] + 3
+umap_dim[,1] &lt;- dim_1
+umap_dim[,2] &lt;- dim_2
+reducedDim(sce_mnn, &#39;UMAP_compact&#39;) &lt;- umap_dim
+options(ggrastr.default.dpi=300)</code></pre>
+<pre class="r"><code>plotReducedDim(sce_mnn, dimred = &#39;UMAP_compact&#39;, colour_by=&quot;site_caps&quot;, point_alpha = 0.2, point_size = 0.005, rasterise = TRUE) +
+  scale_color_manual(values = site_palette) +
+  guides(colour = guide_legend(override.aes = list(alpha = 1, size = 3))) +
+  labs(
+    x = &#39;UMAP 1&#39;,
+    y = &#39;UMAP 2&#39;,
+    color = &#39;&#39;,
+    title = paste0(&#39;UMAP of all TME cells (&#39;,scales::number(ncol(sce_mnn), big.mark = &quot;&#39;&quot;),&#39; cells)&#39;)
+  ) +
+  theme(
+    plot.title = element_text(size = 8, face = &#39;plain&#39;),
+    axis.line = element_line(linewidth = rel(0.5)),
+    axis.text=element_blank(),
+    axis.ticks=element_blank()#,
+    # axis.line =element_blank()
+  )</code></pre>
+<p><img src="figure/mvt1-tumor-10x_rnaseq-pll-tme-main.Rmd/final-figures-umap-compact-site-rasterised-1.png" width="2100" style="display: block; margin: auto;" /></p>
+</div>
+<div id="cell-type-individual-level" class="section level3"
+number="4.2">
+<h3><span class="header-section-number">4.2</span> Cell type individual
+level</h3>
+<p>Showing only cell types with &gt;= 50 cells</p>
+<pre class="r"><code>celltype_label &lt;- &#39;celltype_immgen_pruned.labels&#39;
+use_celltypes &lt;-  colData(sce_mnn)[,celltype_label] %&gt;% table %&gt;% data.frame %&gt;% filter(Freq &gt;= 50) %&gt;% collect %&gt;% .[[&#39;.&#39;]] %&gt;% as.character
+use_sce &lt;- sce_mnn[,colData(sce_mnn)[,celltype_label] %in% use_celltypes]
+use_sce[[celltype_label]] &lt;- factor(use_sce[[celltype_label]], levels = names(celltype_palette)[names(celltype_palette) %in% use_celltypes])
+
+plotReducedDim(sce_mnn, dimred = &#39;UMAP_compact&#39;, colour_by = celltype_label, point_alpha = 0.2, point_size = 0.05, rasterise = TRUE) + 
+  scale_color_manual(values = celltype_palette) +
+  guides(colour = guide_legend(override.aes = list(alpha = 1, size = 3))) +
+  labs(
+    x = &#39;UMAP 1&#39;,
+    y = &#39;UMAP 2&#39;,
+    color = &#39;&#39;,
+    title = paste0(&#39;UMAP of selected TME cell types (&#39;,scales::number(ncol(use_sce), big.mark = &quot;&#39;&quot;),&#39; cells)&#39;)
+  ) +
+  theme(
+    plot.title = element_text(size = 8, face = &#39;plain&#39;),
+    axis.line = element_line(linewidth = rel(0.5)),
+    axis.text=element_blank(),
+    axis.ticks=element_blank()#,
+    # axis.line =element_blank()
+  )</code></pre>
+<p><img src="figure/mvt1-tumor-10x_rnaseq-pll-tme-main.Rmd/final-figures-umap-compact-celltype-ind-1.png" width="2100" style="display: block; margin: auto;" /></p>
+</div>
+</div>
+<div id="site-differential-abundance-of-cell-types"
+class="section level2" number="5">
+<h2><span class="header-section-number">5</span> Site differential
+abundance of cell types</h2>
+<p>Differential abundance of cell types using individual cell
+annotations ### Statistical analysis Differential abundance using
+<code>speckle::propeller</code> package</p>
+<pre class="r"><code>ct_label &lt;- &#39;celltype_immgen_pruned.labels&#39;
+use_data &lt;- colData(sce_comb) %&gt;% data.frame %&gt;% 
+  mutate(
+    sample = paste(mouse_id, site, sep = &#39;_&#39;)
+  )
+  #dplyr::rename(&#39;celltype_label&#39; = ct_label) %&gt;% 
+
+# Remove low abundant cell types 
+keep_labels &lt;- table(use_data[[ct_label]]) %&gt;% data.frame %&gt;% filter(Freq &gt;= 100) %&gt;% pull(Var1)
+keep_rows &lt;- use_data[[ct_label]] %in% keep_labels
+use_data &lt;- use_data[keep_rows,]
+
+# Run propeller Global
+propeller_global &lt;- propeller(clusters = use_data[[ct_label]], sample = use_data$sample, group = use_data$site) %&gt;% 
+  rownames_to_column(&#39;cell_type&#39;)
+
+# Run pairwise propeller to obtaib P-values
+site_levels &lt;- use_data$site_caps %&gt;% unique
+site_combn &lt;- combn(site_levels, 2, simplify = FALSE)
+sc &lt;-  site_combn[[1]]
+propeller_pairwise &lt;-foreach(sc = site_combn, .combine = rbind) %do% {
+  cat(sc)
+  use_data &lt;- colData(sce_comb) %&gt;% data.frame %&gt;% 
+    filter(site_caps %in% sc) %&gt;% 
+    mutate(
+      sample = paste(mouse_id, site_caps, sep = &#39;_&#39;),
+      group = ifelse(site_caps == sc[1], &#39;group1&#39;, &#39;group2&#39;)
+    )
+  keep_rows &lt;- use_data[[ct_label]] %in% keep_labels
+  use_data &lt;- use_data[keep_rows,]
+  propeller(clusters = use_data[[ct_label]], sample = use_data$sample, group = use_data$group) %&gt;% 
+    mutate(
+      group1 = sc[1],
+      group2 = sc[2],
+      FDR.sign = symnum(FDR, corr = FALSE, na = FALSE, cutpoints = c(0, 0.0001,0.001, 0.01, 0.05, 1), symbols = c(&quot;****&quot;, &quot;***&quot;, &quot;**&quot;, &quot;*&quot;, &quot;&quot;)),
+      p.sign = symnum(P.Value, corr = FALSE, na = FALSE, cutpoints = c(0, 0.0001, 0.001, 0.01, 0.05, 1), symbols = c(&quot;****&quot;, &quot;***&quot;, &quot;**&quot;, &quot;*&quot;, &quot;&quot;))
+    ) %&gt;% 
+    dplyr::rename(cell_type = BaselineProp.clusters)
+}</code></pre>
+<p>1 31 23 2</p>
+<p>Table of results with pairwise comparison between sites for cluster
+abundance.</p>
+<pre class="r"><code>propeller_pairwise %&gt;%
+  arrange(FDR) %&gt;% 
+  datatable(., 
+            rownames = FALSE, 
+            filter = &#39;top&#39;, 
+            caption = &#39;Pairwise comparison between cell types for cluster abundance using speckle::propeller&#39;,
+            extensions = &#39;Buttons&#39;, 
+            options = list(
+              dom = &#39;Blfrtip&#39;,
+              buttons = c(&#39;csv&#39;, &#39;excel&#39;)
+            )) %&gt;% 
+  formatPercentage(names(propeller_pairwise)[2:4], digits = 3) %&gt;% 
+  formatRound(names(propeller_pairwise)[5:6], digits = 3, interval = -1000) %&gt;% 
+  formatSignif(c(&#39;P.Value&#39;, &#39;FDR&#39;), digits = 3)</code></pre>
+<div class="datatables html-widget html-fill-item-overflow-hidden html-fill-item" id="htmlwidget-0e41329c1963262c826a" style="width:100%;height:auto;"></div>
+<script type="application/json" data-for="htmlwidget-0e41329c1963262c826a">{"x":{"filter":"top","vertical":false,"filterHTML":"<tr>\n  <td data-type=\"factor\" style=\"vertical-align: top;\">\n    <div class=\"form-group has-feedback\" style=\"margin-bottom: auto;\">\n      <input type=\"search\" placeholder=\"All\" class=\"form-control\" style=\"width: 100%;\"/>\n      <span class=\"glyphicon glyphicon-remove-circle form-control-feedback\"><\/span>\n    <\/div>\n    <div style=\"width: 100%; display: none;\">\n      <select multiple=\"multiple\" style=\"width: 100%;\" data-options=\"[&quot;DC&quot;,&quot;Endothelial cells&quot;,&quot;Fibroblasts&quot;,&quot;Macrophages&quot;,&quot;Monocytes&quot;,&quot;Neutrophils&quot;]\"><\/select>\n    <\/div>\n  <\/td>\n  <td data-type=\"number\" style=\"vertical-align: top;\">\n    <div class=\"form-group has-feedback\" style=\"margin-bottom: auto;\">\n      <input type=\"search\" placeholder=\"All\" class=\"form-control\" style=\"width: 100%;\"/>\n      <span class=\"glyphicon glyphicon-remove-circle form-control-feedback\"><\/span>\n    <\/div>\n    <div style=\"display: none;position: absolute;width: 200px;opacity: 1\">\n      <div data-min=\"0.00272243534216\" data-max=\"0.890607598069546\" data-scale=\"15\"><\/div>\n      <span style=\"float: left;\"><\/span>\n      <span style=\"float: right;\"><\/span>\n    <\/div>\n  <\/td>\n  <td data-type=\"number\" style=\"vertical-align: top;\">\n    <div class=\"form-group has-feedback\" style=\"margin-bottom: auto;\">\n      <input type=\"search\" placeholder=\"All\" class=\"form-control\" style=\"width: 100%;\"/>\n      <span class=\"glyphicon glyphicon-remove-circle form-control-feedback\"><\/span>\n    <\/div>\n    <div style=\"display: none;position: absolute;width: 200px;opacity: 1\">\n      <div data-min=\"0.002247956497143\" data-max=\"0.926712111910162\" data-scale=\"15\"><\/div>\n      <span style=\"float: left;\"><\/span>\n      <span style=\"float: right;\"><\/span>\n    <\/div>\n  <\/td>\n  <td data-type=\"number\" style=\"vertical-align: top;\">\n    <div class=\"form-group has-feedback\" style=\"margin-bottom: auto;\">\n      <input type=\"search\" placeholder=\"All\" class=\"form-control\" style=\"width: 100%;\"/>\n      <span class=\"glyphicon glyphicon-remove-circle form-control-feedback\"><\/span>\n    <\/div>\n    <div style=\"display: none;position: absolute;width: 200px;opacity: 1\">\n      <div data-min=\"0.001884548419529\" data-max=\"0.847906481176209\" data-scale=\"15\"><\/div>\n      <span style=\"float: left;\"><\/span>\n      <span style=\"float: right;\"><\/span>\n    <\/div>\n  <\/td>\n  <td data-type=\"number\" style=\"vertical-align: top;\">\n    <div class=\"form-group has-feedback\" style=\"margin-bottom: auto;\">\n      <input type=\"search\" placeholder=\"All\" class=\"form-control\" style=\"width: 100%;\"/>\n      <span class=\"glyphicon glyphicon-remove-circle form-control-feedback\"><\/span>\n    <\/div>\n    <div style=\"display: none;position: absolute;width: 200px;opacity: 1\">\n      <div data-min=\"0.003941721482602\" data-max=\"13.9920731317942\" data-scale=\"15\"><\/div>\n      <span style=\"float: left;\"><\/span>\n      <span style=\"float: right;\"><\/span>\n    <\/div>\n  <\/td>\n  <td data-type=\"number\" style=\"vertical-align: top;\">\n    <div class=\"form-group has-feedback\" style=\"margin-bottom: auto;\">\n      <input type=\"search\" placeholder=\"All\" class=\"form-control\" style=\"width: 100%;\"/>\n      <span class=\"glyphicon glyphicon-remove-circle form-control-feedback\"><\/span>\n    <\/div>\n    <div style=\"display: none;position: absolute;width: 200px;opacity: 1\">\n      <div data-min=\"-10.4044694083539\" data-max=\"5.7958916389307\" data-scale=\"15\"><\/div>\n      <span style=\"float: left;\"><\/span>\n      <span style=\"float: right;\"><\/span>\n    <\/div>\n  <\/td>\n  <td data-type=\"number\" style=\"vertical-align: top;\">\n    <div class=\"form-group has-feedback\" style=\"margin-bottom: auto;\">\n      <input type=\"search\" placeholder=\"All\" class=\"form-control\" style=\"width: 100%;\"/>\n      <span class=\"glyphicon glyphicon-remove-circle form-control-feedback\"><\/span>\n    <\/div>\n    <div style=\"display: none;position: absolute;width: 200px;opacity: 1\">\n      <div data-min=\"2.25335e-10\" data-max=\"0.752910006086337\" data-scale=\"15\"><\/div>\n      <span style=\"float: left;\"><\/span>\n      <span style=\"float: right;\"><\/span>\n    <\/div>\n  <\/td>\n  <td data-type=\"number\" style=\"vertical-align: top;\">\n    <div class=\"form-group has-feedback\" style=\"margin-bottom: auto;\">\n      <input type=\"search\" placeholder=\"All\" class=\"form-control\" style=\"width: 100%;\"/>\n      <span class=\"glyphicon glyphicon-remove-circle form-control-feedback\"><\/span>\n    <\/div>\n    <div style=\"display: none;position: absolute;width: 200px;opacity: 1\">\n      <div data-min=\"1.352015e-09\" data-max=\"0.752910006086337\" data-scale=\"15\"><\/div>\n      <span style=\"float: left;\"><\/span>\n      <span style=\"float: right;\"><\/span>\n    <\/div>\n  <\/td>\n  <td data-type=\"factor\" style=\"vertical-align: top;\">\n    <div class=\"form-group has-feedback\" style=\"margin-bottom: auto;\">\n      <input type=\"search\" placeholder=\"All\" class=\"form-control\" style=\"width: 100%;\"/>\n      <span class=\"glyphicon glyphicon-remove-circle form-control-feedback\"><\/span>\n    <\/div>\n    <div style=\"width: 100%; display: none;\">\n      <select multiple=\"multiple\" style=\"width: 100%;\" data-options=\"[&quot;Primary tumor&quot;,&quot;Liver&quot;,&quot;Lung&quot;]\"><\/select>\n    <\/div>\n  <\/td>\n  <td data-type=\"factor\" style=\"vertical-align: top;\">\n    <div class=\"form-group has-feedback\" style=\"margin-bottom: auto;\">\n      <input type=\"search\" placeholder=\"All\" class=\"form-control\" style=\"width: 100%;\"/>\n      <span class=\"glyphicon glyphicon-remove-circle form-control-feedback\"><\/span>\n    <\/div>\n    <div style=\"width: 100%; display: none;\">\n      <select multiple=\"multiple\" style=\"width: 100%;\" data-options=\"[&quot;Primary tumor&quot;,&quot;Liver&quot;,&quot;Lung&quot;]\"><\/select>\n    <\/div>\n  <\/td>\n  <td data-type=\"character\" style=\"vertical-align: top;\">\n    <div class=\"form-group has-feedback\" style=\"margin-bottom: auto;\">\n      <input type=\"search\" placeholder=\"All\" class=\"form-control\" style=\"width: 100%;\"/>\n      <span class=\"glyphicon glyphicon-remove-circle form-control-feedback\"><\/span>\n    <\/div>\n  <\/td>\n  <td data-type=\"character\" style=\"vertical-align: top;\">\n    <div class=\"form-group has-feedback\" style=\"margin-bottom: auto;\">\n      <input type=\"search\" placeholder=\"All\" class=\"form-control\" style=\"width: 100%;\"/>\n      <span class=\"glyphicon glyphicon-remove-circle form-control-feedback\"><\/span>\n    <\/div>\n  <\/td>\n<\/tr>","extensions":["Buttons"],"caption":"<caption>Pairwise comparison between cell types for cluster abundance using speckle::propeller<\/caption>","data":[["Endothelial cells","Endothelial cells","Macrophages","Fibroblasts","Macrophages","Fibroblasts","Neutrophils","Fibroblasts","Monocytes","Neutrophils","DC","Macrophages","Monocytes","DC","Neutrophils","Monocytes","Endothelial cells","DC"],[0.3110394842868655,0.3270440251572327,0.5918038448256014,0.01415094339622642,0.5377358490566038,0.01645835911397104,0.02128449449325578,0.003913894324853229,0.06573040174974099,0.0145044319097502,0.01300794290318867,0.8906075980695458,0.05011755970795694,0.01318335752298016,0.02709240445089502,0.08079342041606193,0.002722435342160624,0.01880955327310976],[0.002247956497143645,0.002875109843753992,0.9267121119101611,0.02636873930646626,0.8479064811762084,0.00583693411065566,0.008663030404088636,0.00583693411065566,0.03757473436013194,0.008663030404088638,0.01896523271781919,0.9267121119101611,0.03757473436013195,0.02128001596615356,0.03265765225525352,0.06891200145216445,0.00224795649714361,0.01896523271781918],[0.5702981570528494,0.5702981570528493,0.2896894896905761,0.001884548419529662,0.289689489690576,0.02636873930646626,0.03265765225525352,0.00188454841952966,0.1089284121810537,0.01994950433229145,0.009249888323699993,0.8479064811762085,0.06891200145216445,0.009249888323699995,0.01994950433229146,0.1089284121810537,0.002875109843753989,0.02128001596615355],[0.003941721482602175,0.005041415281108049,3.198984239642258,13.99207313179423,2.926949410839436,0.221358102972496,0.2652680093589718,3.097258765106404,0.3449488853071472,0.4342479020927925,2.050320182701732,1.092941418049588,0.5452567559834206,2.300570041654455,1.637015722861439,0.6326356923079299,0.7818680395906148,0.8912226733280607],[-10.40446940835386,-9.34815002595983,5.795891638930705,4.129111035172691,4.105799773229864,-2.872249356439831,-2.525116333153215,2.032971352440254,-1.562483185985321,-1.549332504402948,1.401025178476464,1.588381295076003,-1.196251294174287,1.043858096973832,0.5494538250709586,-0.5046401610770399,-0.3291690625792927,0.3184344061364879],[2.253358376491945e-10,1.80302668999914e-09,5.639893966124693e-06,0.0003800383874308474,0.00040316197162182,0.008389074641206041,0.01858338225640081,0.05325900289280377,0.1312652675400931,0.1343890152939002,0.1740049785933465,0.1252885665107369,0.243283326364161,0.3069519609236502,0.5877708148449281,0.618413778339874,0.7448832630136213,0.752910006086337],[1.352015025895167e-09,1.081816013999484e-08,1.691968189837408e-05,0.0008063239432436401,0.0008063239432436401,0.05033444784723624,0.05575014676920242,0.1065180057856075,0.1612668183526802,0.1612668183526802,0.1740049785933465,0.2505771330214737,0.3649249895462415,0.4604279413854753,0.618413778339874,0.618413778339874,0.752910006086337,0.752910006086337],["Primary tumor","Lung","Primary tumor","Lung","Lung","Primary tumor","Primary tumor","Primary tumor","Primary tumor","Primary tumor","Primary tumor","Primary tumor","Primary tumor","Lung","Lung","Lung","Primary tumor","Primary tumor"],["Liver","Liver","Liver","Liver","Liver","Lung","Lung","Liver","Liver","Liver","Liver","Lung","Lung","Liver","Liver","Liver","Lung","Lung"],["****","****","****","***","***","","","","","","","","","","","","",""],["****","****","****","***","***","**","*","","","","","","","","","","",""]],"container":"<table class=\"display\">\n  <thead>\n    <tr>\n      <th>cell_type<\/th>\n      <th>BaselineProp.Freq<\/th>\n      <th>PropMean.group1<\/th>\n      <th>PropMean.group2<\/th>\n      <th>PropRatio<\/th>\n      <th>Tstatistic<\/th>\n      <th>P.Value<\/th>\n      <th>FDR<\/th>\n      <th>group1<\/th>\n      <th>group2<\/th>\n      <th>FDR.sign<\/th>\n      <th>p.sign<\/th>\n    <\/tr>\n  <\/thead>\n<\/table>","options":{"dom":"Blfrtip","buttons":["csv","excel"],"columnDefs":[{"targets":6,"render":"function(data, type, row, meta) {\n    return type !== 'display' ? data : DTWidget.formatSignif(data, 3, 3, \",\", \".\", null);\n  }"},{"targets":7,"render":"function(data, type, row, meta) {\n    return type !== 'display' ? data : DTWidget.formatSignif(data, 3, 3, \",\", \".\", null);\n  }"},{"targets":4,"render":"function(data, type, row, meta) {\n    return type !== 'display' ? data : DTWidget.formatRound(data, 3, -1000, \",\", \".\", null);\n  }"},{"targets":5,"render":"function(data, type, row, meta) {\n    return type !== 'display' ? data : DTWidget.formatRound(data, 3, -1000, \",\", \".\", null);\n  }"},{"targets":1,"render":"function(data, type, row, meta) {\n    return type !== 'display' ? data : DTWidget.formatPercentage(data, 3, 3, \",\", \".\", null);\n  }"},{"targets":2,"render":"function(data, type, row, meta) {\n    return type !== 'display' ? data : DTWidget.formatPercentage(data, 3, 3, \",\", \".\", null);\n  }"},{"targets":3,"render":"function(data, type, row, meta) {\n    return type !== 'display' ? data : DTWidget.formatPercentage(data, 3, 3, \",\", \".\", null);\n  }"},{"className":"dt-right","targets":[1,2,3,4,5,6,7]}],"order":[],"autoWidth":false,"orderClasses":false,"orderCellsTop":true},"selection":{"mode":"multiple","selected":null,"target":"row","selectable":null}},"evals":["options.columnDefs.0.render","options.columnDefs.1.render","options.columnDefs.2.render","options.columnDefs.3.render","options.columnDefs.4.render","options.columnDefs.5.render","options.columnDefs.6.render"],"jsHooks":[]}</script>
+<div id="distribution-by-site" class="section level3" number="5.1">
+<h3><span class="header-section-number">5.1</span> Distribution by
+site</h3>
+<pre class="r"><code># Create data
+use_data &lt;- colData(sce_comb) %&gt;% 
+  data.frame %&gt;% 
+  dplyr::rename(&#39;celltype_label&#39; = ct_label) %&gt;% 
+  group_by(site_caps, celltype_label) %&gt;% 
+  summarise(freq = n()) %&gt;% 
+  dplyr::rename(cell_type = celltype_label) %&gt;% 
+  na.omit()
+
+# Remove low abundant cell types
+cell_type_freq &lt;- use_data %&gt;% group_by(cell_type) %&gt;% summarise(totalfreq = sum(freq))
+site_filtered &lt;- use_data %&gt;% group_by(site_caps) %&gt;% summarise(freq = sum(freq)) %&gt;% filter(freq &gt;= 500)
+use_data &lt;- use_data %&gt;% 
+  filter(site_caps %in% site_filtered$site_caps) %&gt;% 
+  left_join(cell_type_freq) %&gt;% 
+  filter(totalfreq &gt;= 50) %&gt;% 
+  mutate(cell_type = fct_reorder(cell_type, totalfreq))
+
+# Arrange data and add labels
+arranged_data &lt;- use_data %&gt;% 
+  arrange(site_caps, cell_type)%&gt;% 
+  group_by(site_caps) %&gt;%
+  mutate(
+    totalfreq_by_site = sum(freq),
+    proportion = freq/ totalfreq_by_site,
+    label_y = cumsum(freq)/ totalfreq_by_site,
+    label_y = label_y - 0.5 * (freq / totalfreq_by_site),
+    cell_type = fct_reorder(cell_type, totalfreq, .desc = TRUE),
+    cell_type_label = as.character(cell_type),
+    cell_type_label = ifelse(proportion &lt; 0.03, &#39;&#39;, cell_type_label)
+    
+  )</code></pre>
+<div id="doughnut-chart" class="section level4" number="5.1.1">
+<h4><span class="header-section-number">5.1.1</span> Doughnut chart</h4>
+<pre class="r"><code>i &lt;- unique(arranged_data$site_caps)[1]
+use_data &lt;- foreach(i = unique(arranged_data$site_caps), .combine = rbind) %do% {
+  x &lt;- arranged_data %&gt;% 
+    filter(site_caps == i) %&gt;% 
+    arrange(cell_type)
+  x$ymax &lt;- cumsum(x$proportion)
+  x$ymin &lt;- c(0, head(x$ymax, n = -1))
+  x
+}
+
+use_data %&gt;% 
+  ggplot(aes(ymax=ymax, ymin=ymin, xmax=4, xmin=3, fill=cell_type)) +
+  geom_rect() +
+  coord_polar(theta=&quot;y&quot;) + # Try to remove that to understand how the chart is built initially
+  xlim(c(2, 4)) + # Try to remove that to see how to make a pie chart
+  scale_fill_manual(values = celltype_palette) +
+  facet_wrap(vars(site_caps), ncol = 3) +
+  theme(
+    strip.background = element_blank(),
+    axis.text=element_blank(),
+    axis.ticks=element_blank(),
+    axis.line =element_blank()
+  ) +
+  labs(
+    fill = &#39;&#39;, 
+    x = NULL,
+    y = NULL
+  )</code></pre>
+<p><img src="figure/mvt1-tumor-10x_rnaseq-pll-tme-main.Rmd/da_doughnut_site_celltypefacet_immgen-1.png" width="2400" style="display: block; margin: auto;" /></p>
+</div>
+</div>
+<div id="distribution-by-site-and-mouse" class="section level3"
+number="5.2">
+<h3><span class="header-section-number">5.2</span> Distribution by site
+and mouse</h3>
+<pre class="r"><code># Create data
+use_data &lt;- colData(sce_comb) %&gt;% 
+  data.frame %&gt;%
+  dplyr::rename(&#39;celltype_label&#39; = ct_label) %&gt;% 
+  group_by(site_caps, mouse_id, celltype_label) %&gt;% 
+  summarise(freq = n()) %&gt;% 
+  dplyr::rename(cell_type = celltype_label) %&gt;% 
+  na.omit()
+
+# Remove low abundant cell types and sites
+cell_type_freq &lt;- use_data %&gt;% group_by(cell_type) %&gt;% summarise(totalfreq = sum(freq))
+site_filtered &lt;- use_data %&gt;% group_by(site_caps) %&gt;% summarise(freq = sum(freq)) %&gt;% filter(freq &gt;= 500)
+use_data &lt;- use_data %&gt;% 
+  filter(site_caps %in% site_filtered$site_caps) %&gt;% 
+  left_join(cell_type_freq) %&gt;% 
+  filter(totalfreq &gt;= 50) %&gt;% 
+  mutate(cell_type = fct_reorder(cell_type, totalfreq))
+
+# Arrange data and add labels
+arranged_data &lt;- use_data %&gt;% 
+  arrange(site_caps, cell_type)%&gt;% 
+  group_by(site_caps, mouse_id) %&gt;%
+  mutate(
+    totalfreq_by_site = sum(freq),
+    proportion = freq/ totalfreq_by_site,
+    label_y = cumsum(freq)/ totalfreq_by_site,
+    label_y = label_y - 0.5 * (freq / totalfreq_by_site),
+    cell_type = fct_reorder(cell_type, totalfreq, .desc = TRUE),
+    cell_type_label = as.character(cell_type),
+    cell_type_label = ifelse(proportion &lt; 0.03, &#39;&#39;, cell_type_label),
+    mouse_id = gsub(&quot;mouse_&quot;, &quot;&quot;, mouse_id)
+  )</code></pre>
+<div id="doughnut-chart-1" class="section level4" number="5.2.1">
+<h4><span class="header-section-number">5.2.1</span> Doughnut chart</h4>
+<pre class="r"><code>i &lt;- unique(arranged_data$site_caps)[1]
+use_data &lt;- foreach(i = unique(arranged_data$site_caps), .combine = rbind) %do% {
+  foreach(j = unique(arranged_data$mouse_id), .combine = rbind) %do% {
+    x &lt;- arranged_data %&gt;% 
+      filter(site_caps == i &amp; mouse_id == j) %&gt;% 
+      arrange(cell_type)
+    x$ymax &lt;- cumsum(x$proportion)
+    x$ymin &lt;- c(0, head(x$ymax, n = -1))
+    x
+  }
+}
+
+use_data %&gt;% 
+  ggplot(aes(ymax=ymax, ymin=ymin, xmax=4, xmin=3, fill=cell_type)) +
+  geom_rect() +
+  coord_polar(theta=&quot;y&quot;) + # Try to remove that to understand how the chart is built initially
+  xlim(c(2, 4)) + # Try to remove that to see how to make a pie chart
+  scale_fill_manual(values = celltype_palette) +
+  facet_grid(mouse_id ~ site_caps) +
+  theme(
+    strip.background = element_blank(),
+    axis.text=element_blank(),
+    axis.ticks=element_blank(),
+    axis.line =element_blank()
+  ) +
+  labs(
+    fill = &#39;&#39;, 
+    x = NULL,
+    y = NULL
+  )</code></pre>
+<p><img src="figure/mvt1-tumor-10x_rnaseq-pll-tme-main.Rmd/da_doughnut_site_and_mouse_celltypefacet_immgen-1.png" width="2400" style="display: block; margin: auto;" /></p>
+</div>
+</div>
+<div id="stripchart-boxplot" class="section level3" number="5.3">
+<h3><span class="header-section-number">5.3</span>
+Stripchart-Boxplot</h3>
+<pre class="r"><code>max_prop_cell_type &lt;- arranged_data %&gt;% group_by(cell_type) %&gt;% summarise(max_proportion = max(proportion))
+stat_test &lt;- propeller_pairwise %&gt;% 
+  filter(group1 %in% arranged_data$site_caps &amp; group2 %in%  arranged_data$site_caps) %&gt;%
+  left_join(max_prop_cell_type) %&gt;% 
+  arrange(cell_type, group1, group2) %&gt;% 
+  na.omit() %&gt;% 
+  filter(FDR &lt; 0.05)
+  
+add_count_y &lt;- stat_test %&gt;% group_by(cell_type) %&gt;% reframe(group1 = group1, group2 = group2, n = 1:n())
+stat_test &lt;- stat_test %&gt;% left_join(add_count_y) %&gt;% mutate(y.position = max_proportion + (n*max_proportion/10))
+
+
+arranged_data %&gt;% 
+  ggplot(aes(x = site_caps, y = proportion, color = site_caps)) +
+  geom_boxplot(alpha = 0.4, color = &#39;black&#39;, aes(fill = site_caps), 
+               show.legend = FALSE, size = 0.25, fatten = 1) +
+  # geom_point(alpha = 1, size = 2, shape = 21, color = &#39;black&#39;, aes(fill = site_caps)) +
+  geom_quasirandom(method=&quot;smiley&quot;, width = 0.1, alpha = 1, size = 1, 
+                   shape = 21, color = &#39;black&#39;, aes(fill = site_caps), stroke = 0.4) +
+  # geom_quasirandom(method=&quot;smiley&quot;, width = 0.1, alpha = 1, size = 1, aes(color = site_caps)) +
+  # scale_fill_OkabeIto() +
+  # scale_color_OkabeIto() +
+  scale_fill_manual(values = site_palette) +
+  scale_color_manual(values = site_palette) +
+  # scale_y_continuous(expand = c(0, 0)) +
+  scale_y_continuous(expand = c(0.02, 0, 0.08, 0)) +
+  scale_x_discrete(expand = c(0, 0.5)) +
+  facet_wrap(vars(cell_type), scales = &#39;free_y&#39;, ncol = 2) +
+  theme(
+    # strip.background = element_blank(),
+    # axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1), 
+    axis.text.x=element_blank(),
+    axis.ticks.x=element_blank(),
+    panel.border = element_rect(colour = &quot;black&quot;, size=0.5),
+    strip.background = element_blank()
+  ) +
+  # guides( color = &#39;none&#39;) +
+  guides(fill = guide_legend(override.aes = list(size = 3))) +
+  labs(
+    fill = NULL,
+    x = NULL,
+    y = &#39;Proportion of cells&#39;
+  ) +
+  stat_pvalue_manual(stat_test, label = &#39;FDR.sign&#39;, size = 2)</code></pre>
+<p><img src="figure/mvt1-tumor-10x_rnaseq-pll-tme-main.Rmd/da_stripchart_site_and_mouse_celltypefacet1_immgen-1.png" width="2100" style="display: block; margin: auto;" /></p>
+</div>
+</div>
+<div id="site-markers-for-each-cell-type" class="section level2"
+number="6">
+<h2><span class="header-section-number">6</span> Site markers for each
+cell type</h2>
+<p>For each cell type we tried to identify potential markers to
+distinguish between sites</p>
+<pre class="r"><code>n_top_mk &lt;- 10
+celltype_label &lt;- &#39;celltype_immgen_pruned.labels&#39;
+j &lt;- score_markers$site_celltype_markers[[1]][[1]]
+mk_list &lt;- foreach(i = score_markers$site_celltype_markers) %do% {
+  foreach(j = i, .combine = c) %do% {
+    j %&gt;% data.frame %&gt;% arrange(desc(mean.AUC)) %&gt;% head(n_top_mk) %&gt;% rownames( d)
+  } %&gt;% unique
+}
+names(mk_list) &lt;- names(score_markers$site_celltype_markers)</code></pre>
+<div id="dc" class="section level3" number="6.1">
+<h3><span class="header-section-number">6.1</span> DC</h3>
+<p>In the plot below, color represent the Z-score based on average
+expression of the gene in each group. Z score is limited to -2 to 2
+range. Point size represent the proportion of cells with detected
+expression.</p>
+<pre class="r"><code>use_celltype_label &lt;- &#39;DC&#39;
+use_rows &lt;- mk_list[[use_celltype_label]]
+use_cols &lt;- (sce_comb[[celltype_label]] == use_celltype_label &amp; !is.na(sce_comb[[celltype_label]]))
+use_sce &lt;- sce_comb[use_rows, use_cols]
+rownames(use_sce) &lt;- rowData(use_sce)$gene_name
+res_plot &lt;- plotDots(
+    use_sce,
+    features=rownames(use_sce), 
+    group=&#39;site_caps&#39;,
+    center=TRUE, scale = TRUE,
+    zlim = c(-2,2)
+  )
+
+# Get data
+plot_data &lt;- ggplot_build(res_plot)$plot$data %&gt;% 
+  mutate(Group = factor(Group, levels = rev(c(&#39;Primary tumor&#39;, &#39;Liver&#39;, &#39;Lung&#39;))))
+
+# Create color scale
+group &lt;- retrieveCellInfo(use_sce, &#39;site_caps&#39;, search=&quot;colData&quot;)$value
+ids &lt;- DataFrame(group=group)
+summarized &lt;- summarizeAssayByGroup(
+        assay(use_sce, &quot;logcounts&quot;)[as.character(rownames(use_sce)), , drop = FALSE],
+        ids=ids, 
+        statistics=c(&quot;mean&quot;, &quot;prop.detected&quot;),
+        threshold=0)
+    
+ave &lt;- assay(summarized, &quot;mean&quot;)
+use_heatmap_scale &lt;- heatmap_scale(ave, 
+                                   center=TRUE, 
+                                   scale=TRUE, 
+                                   colour=NULL, 
+                                   zlim=c(-2,2))
+
+res_plot &lt;- ggplot(plot_data) +
+  geom_point(aes(x=.data$Group, 
+                 y=.data$Feature, 
+                 size=.data$NumDetected, 
+                 # col=.data$Average,
+                 fill=.data$Average),
+             pch = 21,
+             color = &#39;black&#39;) +
+  scale_size(limits=c(0, max(plot_data$NumDetected))) +
+  # use_heatmap_scale$colour_scale +
+  use_heatmap_scale$fill_scale +
+  # theme_minimal() +
+  theme(
+    panel.border = element_rect(colour = &quot;black&quot;, fill=NA, linewidth = 2*one_pt)
+    ) +
+  coord_flip() +
+  scale_y_discrete(guide = guide_axis(angle = 45)) +
+  labs(
+    x = &#39;&#39;,
+    y = &#39;&#39;,
+    color = &#39;Z-score&#39;,
+    size = &#39;Proportion\nof cells&#39;
+  )
+
+res_plot + theme( legend.position = &quot;none&quot;)</code></pre>
+<p><img src="figure/mvt1-tumor-10x_rnaseq-pll-tme-main.Rmd/site-celltype-markers-dc-dotplot-1.png" width="4872" style="display: block; margin: auto;" /></p>
+</div>
+<div id="endothelial-cells" class="section level3" number="6.2">
+<h3><span class="header-section-number">6.2</span> Endothelial
+cells</h3>
+<p>In the plot below, color represent the Z-score based on average
+expression of the gene in each group. Z score is limited to -2 to 2
+range. Point size represent the proportion of cells with detected
+expression.</p>
+<pre class="r"><code>use_celltype_label &lt;- &#39;Endothelial cells&#39;
+use_rows &lt;- mk_list[[use_celltype_label]]
+use_cols &lt;- (sce_comb[[celltype_label]] == use_celltype_label &amp; !is.na(sce_comb[[celltype_label]]))
+use_sce &lt;- sce_comb[use_rows, use_cols]
+rownames(use_sce) &lt;- rowData(use_sce)$gene_name
+res_plot &lt;- plotDots(
+    use_sce,
+    features=rownames(use_sce), 
+    group=&#39;site_caps&#39;,
+    center=TRUE, scale = TRUE,
+    zlim = c(-2,2)
+  )
+
+# Get data
+plot_data &lt;- ggplot_build(res_plot)$plot$data %&gt;% 
+  mutate(Group = factor(Group, levels = rev(c(&#39;Primary tumor&#39;, &#39;Liver&#39;, &#39;Lung&#39;))))
+
+# Create color scale
+group &lt;- retrieveCellInfo(use_sce, &#39;site_caps&#39;, search=&quot;colData&quot;)$value
+ids &lt;- DataFrame(group=group)
+summarized &lt;- summarizeAssayByGroup(
+        assay(use_sce, &quot;logcounts&quot;)[as.character(rownames(use_sce)), , drop = FALSE],
+        ids=ids, 
+        statistics=c(&quot;mean&quot;, &quot;prop.detected&quot;),
+        threshold=0)
+    
+ave &lt;- assay(summarized, &quot;mean&quot;)
+use_heatmap_scale &lt;- heatmap_scale(ave, 
+                                   center=TRUE, 
+                                   scale=TRUE, 
+                                   colour=NULL, 
+                                   zlim=c(-2,2))
+
+res_plot &lt;- ggplot(plot_data) +
+  geom_point(aes(x=.data$Group, 
+                 y=.data$Feature, 
+                 size=.data$NumDetected, 
+                 # col=.data$Average,
+                 fill=.data$Average),
+             pch = 21,
+             color = &#39;black&#39;) +
+  scale_size(limits=c(0, max(plot_data$NumDetected))) +
+  # use_heatmap_scale$colour_scale +
+  use_heatmap_scale$fill_scale +
+  # theme_minimal() +
+  theme(
+    panel.border = element_rect(colour = &quot;black&quot;, fill=NA, linewidth = 2*one_pt)
+    ) +
+  coord_flip() +
+  scale_y_discrete(guide = guide_axis(angle = 45)) +
+  labs(
+    x = &#39;&#39;,
+    y = &#39;&#39;,
+    color = &#39;Z-score&#39;,
+    size = &#39;Proportion\nof cells&#39;
+  )
+
+res_plot + theme( legend.position = &quot;none&quot;)</code></pre>
+<p><img src="figure/mvt1-tumor-10x_rnaseq-pll-tme-main.Rmd/site-celltype-markers-endothelial-dotplot-1.png" width="4872" style="display: block; margin: auto;" /></p>
+</div>
+<div id="fibroblasts" class="section level3" number="6.3">
+<h3><span class="header-section-number">6.3</span> Fibroblasts</h3>
+<p>In the plot below, color represent the Z-score based on average
+expression of the gene in each group. Z score is limited to -2 to 2
+range. Point size represent the proportion of cells with detected
+expression.</p>
+<pre class="r"><code>use_celltype_label &lt;- &#39;Fibroblasts&#39;
+use_rows &lt;- mk_list[[use_celltype_label]]
+use_cols &lt;- (sce_comb[[celltype_label]] == use_celltype_label &amp; !is.na(sce_comb[[celltype_label]]))
+use_sce &lt;- sce_comb[use_rows, use_cols]
+rownames(use_sce) &lt;- rowData(use_sce)$gene_name
+res_plot &lt;- plotDots(
+    use_sce,
+    features=rownames(use_sce), 
+    group=&#39;site_caps&#39;,
+    center=TRUE, scale = TRUE,
+    zlim = c(-2,2)
+  )
+
+# Get data
+plot_data &lt;- ggplot_build(res_plot)$plot$data %&gt;% 
+  mutate(Group = factor(Group, levels = rev(c(&#39;Primary tumor&#39;, &#39;Liver&#39;, &#39;Lung&#39;))))
+
+# Create color scale
+group &lt;- retrieveCellInfo(use_sce, &#39;site_caps&#39;, search=&quot;colData&quot;)$value
+ids &lt;- DataFrame(group=group)
+summarized &lt;- summarizeAssayByGroup(
+        assay(use_sce, &quot;logcounts&quot;)[as.character(rownames(use_sce)), , drop = FALSE],
+        ids=ids, 
+        statistics=c(&quot;mean&quot;, &quot;prop.detected&quot;),
+        threshold=0)
+    
+ave &lt;- assay(summarized, &quot;mean&quot;)
+use_heatmap_scale &lt;- heatmap_scale(ave, 
+                                   center=TRUE, 
+                                   scale=TRUE, 
+                                   colour=NULL, 
+                                   zlim=c(-2,2))
+
+res_plot &lt;- ggplot(plot_data) +
+  geom_point(aes(x=.data$Group, 
+                 y=.data$Feature, 
+                 size=.data$NumDetected, 
+                 # col=.data$Average,
+                 fill=.data$Average),
+             pch = 21,
+             color = &#39;black&#39;) +
+  scale_size(limits=c(0, max(plot_data$NumDetected))) +
+  # use_heatmap_scale$colour_scale +
+  use_heatmap_scale$fill_scale +
+  # theme_minimal() +
+  theme(
+    panel.border = element_rect(colour = &quot;black&quot;, fill=NA, linewidth = 2*one_pt)
+    ) +
+  coord_flip() +
+  scale_y_discrete(guide = guide_axis(angle = 45)) +
+  labs(
+    x = &#39;&#39;,
+    y = &#39;&#39;,
+    color = &#39;Z-score&#39;,
+    size = &#39;Proportion\nof cells&#39;
+  )
+
+res_plot + theme( legend.position = &quot;none&quot;)</code></pre>
+<p><img src="figure/mvt1-tumor-10x_rnaseq-pll-tme-main.Rmd/site-celltype-markers-fibroblasts-dotplot-1.png" width="4872" style="display: block; margin: auto;" /></p>
+</div>
+<div id="macrophages" class="section level3" number="6.4">
+<h3><span class="header-section-number">6.4</span> Macrophages</h3>
+<p>In the plot below, color represent the Z-score based on average
+expression of the gene in each group. Z score is limited to -2 to 2
+range. Point size represent the proportion of cells with detected
+expression.</p>
+<pre class="r"><code>use_celltype_label &lt;- &#39;Macrophages&#39;
+use_rows &lt;- mk_list[[use_celltype_label]]
+use_cols &lt;- (sce_comb[[celltype_label]] == use_celltype_label &amp; !is.na(sce_comb[[celltype_label]]))
+use_sce &lt;- sce_comb[use_rows, use_cols]
+rownames(use_sce) &lt;- rowData(use_sce)$gene_name
+res_plot &lt;- plotDots(
+    use_sce,
+    features=rownames(use_sce), 
+    group=&#39;site_caps&#39;,
+    center=TRUE, scale = TRUE,
+    zlim = c(-2,2)
+  )
+
+# Get data
+plot_data &lt;- ggplot_build(res_plot)$plot$data %&gt;% 
+  mutate(Group = factor(Group, levels = rev(c(&#39;Primary tumor&#39;, &#39;Liver&#39;, &#39;Lung&#39;))))
+
+# Create color scale
+group &lt;- retrieveCellInfo(use_sce, &#39;site_caps&#39;, search=&quot;colData&quot;)$value
+ids &lt;- DataFrame(group=group)
+summarized &lt;- summarizeAssayByGroup(
+        assay(use_sce, &quot;logcounts&quot;)[as.character(rownames(use_sce)), , drop = FALSE],
+        ids=ids, 
+        statistics=c(&quot;mean&quot;, &quot;prop.detected&quot;),
+        threshold=0)
+    
+ave &lt;- assay(summarized, &quot;mean&quot;)
+use_heatmap_scale &lt;- heatmap_scale(ave, 
+                                   center=TRUE, 
+                                   scale=TRUE, 
+                                   colour=NULL, 
+                                   zlim=c(-2,2))
+
+res_plot &lt;- ggplot(plot_data) +
+  geom_point(aes(x=.data$Group, 
+                 y=.data$Feature, 
+                 size=.data$NumDetected, 
+                 # col=.data$Average,
+                 fill=.data$Average),
+             pch = 21,
+             color = &#39;black&#39;) +
+  scale_size(limits=c(0, max(plot_data$NumDetected))) +
+  # use_heatmap_scale$colour_scale +
+  use_heatmap_scale$fill_scale +
+  # theme_minimal() +
+  theme(
+    panel.border = element_rect(colour = &quot;black&quot;, fill=NA, linewidth = 2*one_pt)
+    ) +
+  coord_flip() +
+  scale_y_discrete(guide = guide_axis(angle = 45)) +
+  labs(
+    x = &#39;&#39;,
+    y = &#39;&#39;,
+    color = &#39;Z-score&#39;,
+    size = &#39;Proportion\nof cells&#39;
+  )
+
+res_plot + theme( legend.position = &quot;none&quot;)</code></pre>
+<p><img src="figure/mvt1-tumor-10x_rnaseq-pll-tme-main.Rmd/site-celltype-markers-macrophages-dotplot-1.png" width="4872" style="display: block; margin: auto;" /></p>
+</div>
+<div id="monocytes" class="section level3" number="6.5">
+<h3><span class="header-section-number">6.5</span> Monocytes</h3>
+<p>In the plot below, color represent the Z-score based on average
+expression of the gene in each group. Z score is limited to -2 to 2
+range. Point size represent the proportion of cells with detected
+expression.</p>
+<pre class="r"><code>use_celltype_label &lt;- &#39;Monocytes&#39;
+use_rows &lt;- mk_list[[use_celltype_label]]
+use_cols &lt;- (sce_comb[[celltype_label]] == use_celltype_label &amp; !is.na(sce_comb[[celltype_label]]))
+use_sce &lt;- sce_comb[use_rows, use_cols]
+rownames(use_sce) &lt;- rowData(use_sce)$gene_name
+res_plot &lt;- plotDots(
+    use_sce,
+    features=rownames(use_sce), 
+    group=&#39;site_caps&#39;,
+    center=TRUE, scale = TRUE,
+    zlim = c(-2,2)
+  )
+
+# Get data
+plot_data &lt;- ggplot_build(res_plot)$plot$data %&gt;% 
+  mutate(Group = factor(Group, levels = rev(c(&#39;Primary tumor&#39;, &#39;Liver&#39;, &#39;Lung&#39;))))
+
+# Create color scale
+group &lt;- retrieveCellInfo(use_sce, &#39;site_caps&#39;, search=&quot;colData&quot;)$value
+ids &lt;- DataFrame(group=group)
+summarized &lt;- summarizeAssayByGroup(
+        assay(use_sce, &quot;logcounts&quot;)[as.character(rownames(use_sce)), , drop = FALSE],
+        ids=ids, 
+        statistics=c(&quot;mean&quot;, &quot;prop.detected&quot;),
+        threshold=0)
+    
+ave &lt;- assay(summarized, &quot;mean&quot;)
+use_heatmap_scale &lt;- heatmap_scale(ave, 
+                                   center=TRUE, 
+                                   scale=TRUE, 
+                                   colour=NULL, 
+                                   zlim=c(-2,2))
+
+res_plot &lt;- ggplot(plot_data) +
+  geom_point(aes(x=.data$Group, 
+                 y=.data$Feature, 
+                 size=.data$NumDetected, 
+                 # col=.data$Average,
+                 fill=.data$Average),
+             pch = 21,
+             color = &#39;black&#39;) +
+  scale_size(limits=c(0, max(plot_data$NumDetected))) +
+  # use_heatmap_scale$colour_scale +
+  use_heatmap_scale$fill_scale +
+  # theme_minimal() +
+  theme(
+    panel.border = element_rect(colour = &quot;black&quot;, fill=NA, linewidth = 2*one_pt)
+    ) +
+  coord_flip() +
+  scale_y_discrete(guide = guide_axis(angle = 45)) +
+  labs(
+    x = &#39;&#39;,
+    y = &#39;&#39;,
+    color = &#39;Z-score&#39;,
+    size = &#39;Proportion\nof cells&#39;
+  )
+
+res_plot + theme( legend.position = &quot;none&quot;)</code></pre>
+<p><img src="figure/mvt1-tumor-10x_rnaseq-pll-tme-main.Rmd/site-celltype-markers-monocytes-dotplot-1.png" width="4872" style="display: block; margin: auto;" /></p>
+</div>
+<div id="neutrophils" class="section level3" number="6.6">
+<h3><span class="header-section-number">6.6</span> Neutrophils</h3>
+<p>In the plot below, color represent the Z-score based on average
+expression of the gene in each group. Z score is limited to -2 to 2
+range. Point size represent the proportion of cells with detected
+expression.</p>
+<pre class="r"><code>use_celltype_label &lt;- &#39;Neutrophils&#39;
+use_rows &lt;- mk_list[[use_celltype_label]]
+use_cols &lt;- (sce_comb[[celltype_label]] == use_celltype_label &amp; !is.na(sce_comb[[celltype_label]]))
+use_sce &lt;- sce_comb[use_rows, use_cols]
+rownames(use_sce) &lt;- rowData(use_sce)$gene_name
+res_plot &lt;- plotDots(
+    use_sce,
+    features=rownames(use_sce), 
+    group=&#39;site_caps&#39;,
+    center=TRUE, scale = TRUE,
+    zlim = c(-2,2)
+  )
+
+# Get data
+plot_data &lt;- ggplot_build(res_plot)$plot$data %&gt;% 
+  mutate(Group = factor(Group, levels = rev(c(&#39;Primary tumor&#39;, &#39;Liver&#39;, &#39;Lung&#39;))))
+
+# Create color scale
+group &lt;- retrieveCellInfo(use_sce, &#39;site_caps&#39;, search=&quot;colData&quot;)$value
+ids &lt;- DataFrame(group=group)
+summarized &lt;- summarizeAssayByGroup(
+        assay(use_sce, &quot;logcounts&quot;)[as.character(rownames(use_sce)), , drop = FALSE],
+        ids=ids, 
+        statistics=c(&quot;mean&quot;, &quot;prop.detected&quot;),
+        threshold=0)
+    
+ave &lt;- assay(summarized, &quot;mean&quot;)
+use_heatmap_scale &lt;- heatmap_scale(ave, 
+                                   center=TRUE, 
+                                   scale=TRUE, 
+                                   colour=NULL, 
+                                   zlim=c(-2,2))
+
+res_plot &lt;- ggplot(plot_data) +
+  geom_point(aes(x=.data$Group, 
+                 y=.data$Feature, 
+                 size=.data$NumDetected, 
+                 # col=.data$Average,
+                 fill=.data$Average),
+             pch = 21,
+             color = &#39;black&#39;) +
+  scale_size(limits=c(0, max(plot_data$NumDetected))) +
+  # use_heatmap_scale$colour_scale +
+  use_heatmap_scale$fill_scale +
+  # theme_minimal() +
+  theme(
+    panel.border = element_rect(colour = &quot;black&quot;, fill=NA, linewidth = 2*one_pt)
+    ) +
+  coord_flip() +
+  scale_y_discrete(guide = guide_axis(angle = 45)) +
+  labs(
+    x = &#39;&#39;,
+    y = &#39;&#39;,
+    color = &#39;Z-score&#39;,
+    size = &#39;Proportion\nof cells&#39;
+  )
+
+res_plot + theme( legend.position = &quot;none&quot;)</code></pre>
+<p><img src="figure/mvt1-tumor-10x_rnaseq-pll-tme-main.Rmd/site-celltype-markers-neutrophils-dotplot-1.png" width="4872" style="display: block; margin: auto;" /></p>
+</div>
+<div id="legend" class="section level3" number="6.7">
+<h3><span class="header-section-number">6.7</span> Legend</h3>
+<pre class="r"><code>legend &lt;- cowplot::get_legend(res_plot)
+grid.newpage()
+grid.draw(legend)</code></pre>
+<p><img src="figure/mvt1-tumor-10x_rnaseq-pll-tme-main.Rmd/site-celltype-markers-legend-dotplot-1.png" width="1872" style="display: block; margin: auto;" /></p>
+<br>
+<p>
+<button type="button" class="btn btn-default btn-workflowr btn-workflowr-sessioninfo" data-toggle="collapse" data-target="#workflowr-sessioninfo" style="display: block;">
+<span class="glyphicon glyphicon-wrench" aria-hidden="true"></span>
+Session information
+</button>
+</p>
+<div id="workflowr-sessioninfo" class="collapse">
+<pre class="r"><code>sessionInfo()</code></pre>
+<p>R version 4.2.2 (2022-10-31) Platform: x86_64-apple-darwin17.0
+(64-bit) Running under: macOS Big Sur … 10.16</p>
+<p>Matrix products: default BLAS:
+/Library/Frameworks/R.framework/Versions/4.2/Resources/lib/libRblas.0.dylib
+LAPACK:
+/Library/Frameworks/R.framework/Versions/4.2/Resources/lib/libRlapack.dylib</p>
+<p>locale: [1]
+en_US.UTF-8/en_US.UTF-8/en_US.UTF-8/C/en_US.UTF-8/en_US.UTF-8</p>
+<p>attached base packages: [1] grid stats4 stats graphics grDevices
+utils datasets [8] methods base</p>
+<p>other attached packages: [1] circlize_0.4.15 GSVA_1.46.0<br />
+[3] clusterProfiler_4.6.0 ComplexHeatmap_2.14.0<br />
+[5] miloR_1.6.0 edgeR_3.40.2<br />
+[7] limma_3.54.1 speckle_0.0.3<br />
+[9] scDblFinder_1.13.8 SingleR_2.0.0<br />
+[11] celldex_1.8.0 bluster_1.8.0<br />
+[13] batchelor_1.14.1 BiocSingular_1.14.0<br />
+[15] scran_1.26.2 SeuratObject_4.1.3<br />
+[17] Seurat_4.3.0 DropletUtils_1.18.1<br />
+[19] scater_1.26.1 scuttle_1.8.4<br />
+[21] SingleCellExperiment_1.20.0 SummarizedExperiment_1.28.0 [23]
+Biobase_2.58.0 GenomicRanges_1.50.2<br />
+[25] GenomeInfoDb_1.34.9 IRanges_2.32.0<br />
+[27] S4Vectors_0.36.1 BiocGenerics_0.44.0<br />
+[29] MatrixGenerics_1.10.0 matrixStats_1.0.0<br />
+[31] magrittr_2.0.3 openxlsx_4.2.5.2<br />
+[33] patchwork_1.1.3 pheatmap_1.0.12<br />
+[35] ggpubr_0.6.0 RColorBrewer_1.1-3<br />
+[37] arsenal_3.6.3 ggbeeswarm_0.7.2<br />
+[39] colorblindr_0.1.0 colorspace_2.1-1<br />
+[41] cowplot_1.1.1 kableExtra_1.3.4<br />
+[43] knitr_1.44 DT_0.30<br />
+[45] foreach_1.5.2 showtext_0.9-6<br />
+[47] showtextdb_3.0 sysfonts_0.8.8<br />
+[49] lubridate_1.9.3 forcats_1.0.0<br />
+[51] stringr_1.5.1 dplyr_1.1.4<br />
+[53] purrr_1.0.2 readr_2.1.4<br />
+[55] tidyr_1.3.1 tibble_3.2.1<br />
+[57] ggplot2_3.5.0 tidyverse_2.0.0<br />
+[59] workflowr_1.7.1</p>
+<p>loaded via a namespace (and not attached): [1] rsvd_1.0.5
+ica_1.0-3<br />
+[3] svglite_2.1.2 ps_1.7.5<br />
+[5] Rsamtools_2.14.0 lmtest_0.9-40<br />
+[7] rprojroot_2.0.3 crayon_1.5.2<br />
+[9] MASS_7.3-60 rhdf5filters_1.10.0<br />
+[11] nlme_3.1-163 backports_1.4.1<br />
+[13] GOSemSim_2.24.0 rlang_1.1.4<br />
+[15] HDO.db_0.99.1 XVector_0.38.0<br />
+[17] ROCR_1.0-11 irlba_2.3.5.1<br />
+[19] callr_3.7.3 filelock_1.0.2<br />
+[21] xgboost_1.7.5.1 BiocParallel_1.32.5<br />
+[23] rjson_0.2.21 bit64_4.0.5<br />
+[25] glue_1.8.0 sctransform_0.4.1<br />
+[27] parallel_4.2.2 processx_3.8.2<br />
+[29] vipor_0.4.5 spatstat.sparse_3.0-2<br />
+[31] AnnotationDbi_1.60.0 DOSE_3.24.2<br />
+[33] spatstat.geom_3.2-7 tidyselect_1.2.1<br />
+[35] fitdistrplus_1.1-11 XML_3.99-0.14<br />
+[37] zoo_1.8-12 GenomicAlignments_1.34.0<br />
+[39] org.Mm.eg.db_3.16.0 xtable_1.8-4<br />
+[41] evaluate_0.22 cli_3.6.3<br />
+[43] zlibbioc_1.44.0 rstudioapi_0.15.0<br />
+[45] miniUI_0.1.1.1 sp_2.1-1<br />
+[47] whisker_0.4.1 bslib_0.5.1<br />
+[49] fastmatch_1.1-4 treeio_1.22.0<br />
+[51] shiny_1.7.5.1 xfun_0.40<br />
+[53] clue_0.3-65 gson_0.1.0<br />
+[55] cluster_2.1.4 tidygraph_1.2.3<br />
+[57] KEGGREST_1.38.0 interactiveDisplayBase_1.36.0 [59] ggrepel_0.9.4
+ape_5.7-1<br />
+[61] listenv_0.9.0 Biostrings_2.66.0<br />
+[63] png_0.1-8 future_1.33.0<br />
+[65] withr_3.0.1 ggforce_0.4.1<br />
+[67] bitops_1.0-7 plyr_1.8.9<br />
+[69] GSEABase_1.60.0 dqrng_0.3.1<br />
+[71] pillar_1.9.0 GlobalOptions_0.1.2<br />
+[73] cachem_1.0.8 fs_1.6.4<br />
+[75] GetoptLong_1.0.5 DelayedMatrixStats_1.20.0<br />
+[77] vctrs_0.6.5 ellipsis_0.3.2<br />
+[79] generics_0.1.3 tools_4.2.2<br />
+[81] beeswarm_0.4.0 tweenr_2.0.2<br />
+[83] munsell_0.5.1 fgsea_1.24.0<br />
+[85] DelayedArray_0.24.0 fastmap_1.1.1<br />
+[87] compiler_4.2.2 abind_1.4-5<br />
+[89] httpuv_1.6.8 rtracklayer_1.58.0<br />
+[91] ExperimentHub_2.6.0 plotly_4.10.3<br />
+[93] GenomeInfoDbData_1.2.9 gridExtra_2.3<br />
+[95] lattice_0.20-45 deldir_1.0-9<br />
+[97] utf8_1.2.4 later_1.3.1<br />
+[99] BiocFileCache_2.6.0 jsonlite_1.8.7<br />
+[101] scales_1.3.0 graph_1.76.0<br />
+[103] ScaledMatrix_1.6.0 tidytree_0.4.2<br />
+[105] pbapply_1.7-2 carData_3.0-5<br />
+[107] sparseMatrixStats_1.10.0 lazyeval_0.2.2<br />
+[109] promises_1.2.1 doParallel_1.0.17<br />
+[111] car_3.1-2 R.utils_2.12.2<br />
+[113] goftest_1.2-3 spatstat.utils_3.0-3<br />
+[115] reticulate_1.34.0 rmarkdown_2.25<br />
+[117] statmod_1.5.0 webshot_0.5.5<br />
+[119] Rtsne_0.16 downloader_0.4<br />
+[121] uwot_0.1.16 igraph_1.5.1<br />
+[123] HDF5Array_1.26.0 survival_3.5-7<br />
+[125] ResidualMatrix_1.8.0 yaml_2.3.7<br />
+[127] systemfonts_1.1.0 htmltools_0.5.6.1<br />
+[129] memoise_2.0.1 BiocIO_1.8.0<br />
+[131] locfit_1.5-9.8 graphlayouts_1.0.1<br />
+[133] viridisLite_0.4.2 digest_0.6.37<br />
+[135] mime_0.12 rappdirs_0.3.3<br />
+[137] RSQLite_2.3.1 yulab.utils_0.1.7<br />
+[139] future.apply_1.11.0 data.table_1.14.8<br />
+[141] blob_1.2.4 R.oo_1.25.0<br />
+[143] labeling_0.4.3 splines_4.2.2<br />
+[145] Rhdf5lib_1.20.0 Cairo_1.6-1<br />
+[147] AnnotationHub_3.6.0 RCurl_1.98-1.12<br />
+[149] broom_1.0.5 hms_1.1.3<br />
+[151] rhdf5_2.42.0 BiocManager_1.30.22<br />
+[153] shape_1.4.6 aplot_0.2.2<br />
+[155] ggrastr_1.0.2 sass_0.4.7<br />
+[157] Rcpp_1.0.13 RANN_2.6.1<br />
+[159] enrichplot_1.18.3 fansi_1.0.6<br />
+[161] tzdb_0.4.0 parallelly_1.36.0<br />
+[163] R6_2.5.1 ggridges_0.5.4<br />
+[165] lifecycle_1.0.4 zip_2.3.0<br />
+[167] curl_5.1.0 ggsignif_0.6.4<br />
+[169] leiden_0.4.3 jquerylib_0.1.4<br />
+[171] Matrix_1.5-3 qvalue_2.30.0<br />
+[173] RcppAnnoy_0.0.21 org.Hs.eg.db_3.16.0<br />
+[175] iterators_1.0.14 spatstat.explore_3.2-3<br />
+[177] htmlwidgets_1.6.2 beachmat_2.14.0<br />
+[179] polyclip_1.10-6 crosstalk_1.2.0<br />
+[181] shadowtext_0.1.2 gridGraphics_0.5-1<br />
+[183] timechange_0.2.0 rvest_1.0.3<br />
+[185] globals_0.16.2 spatstat.random_3.2-1<br />
+[187] progressr_0.14.0 codetools_0.2-19<br />
+[189] GO.db_3.16.0 metapod_1.6.0<br />
+[191] gtools_3.9.4 getPass_0.2-2<br />
+[193] dbplyr_2.3.4 R.methodsS3_1.8.2<br />
+[195] gtable_0.3.5 DBI_1.1.3<br />
+[197] git2r_0.32.0 highr_0.10<br />
+[199] ggfun_0.1.3 tensor_1.5<br />
+[201] httr_1.4.7 KernSmooth_2.23-22<br />
+[203] stringi_1.8.4 farver_2.1.2<br />
+[205] reshape2_1.4.4 annotate_1.76.0<br />
+[207] viridis_0.6.4 ggtree_3.4.4<br />
+[209] xml2_1.3.5 BiocNeighbors_1.16.0<br />
+[211] restfulr_0.0.15 ggplotify_0.1.2<br />
+[213] scattermore_1.2 BiocVersion_3.16.0<br />
+[215] bit_4.0.5 scatterpie_0.2.1<br />
+[217] spatstat.data_3.0-3 ggraph_2.1.0<br />
+[219] pkgconfig_2.0.3 rstatix_0.7.2</p>
+</div>
+</div>
+</div>
+</div>
+</div>
+</div>
+</div>
+</div>
+
+
+<!-- Adjust MathJax settings so that all math formulae are shown using
+TeX fonts only; see
+https://docs.mathjax.org/en/latest/web/configuration.html. This will make
+the presentation more consistent at the cost of the webpage sometimes
+taking slightly longer to load. Note that this only works because the
+footer is added to webpages before the MathJax javascript. -->
+<script type="text/x-mathjax-config">
+  MathJax.Hub.Config({
+    "HTML-CSS": { availableFonts: ["TeX"] }
+  });
+</script>
+
+
+
+
+</div>
+</div>
+
+</div>
+
+<script>
+
+// add bootstrap table styles to pandoc tables
+function bootstrapStylePandocTables() {
+  $('tr.odd').parent('tbody').parent('table').addClass('table table-condensed');
+}
+$(document).ready(function () {
+  bootstrapStylePandocTables();
+});
+
+
+</script>
+
+<!-- tabsets -->
+
+<script>
+$(document).ready(function () {
+  window.buildTabsets("TOC");
+});
+
+$(document).ready(function () {
+  $('.tabset-dropdown > .nav-tabs > li').click(function () {
+    $(this).parent().toggleClass('nav-tabs-open');
+  });
+});
+</script>
+
+<!-- code folding -->
+<script>
+$(document).ready(function () {
+  window.initializeCodeFolding("hide" === "show");
+});
+</script>
+
+<script>
+$(document).ready(function ()  {
+
+    // temporarily add toc-ignore selector to headers for the consistency with Pandoc
+    $('.unlisted.unnumbered').addClass('toc-ignore')
+
+    // move toc-ignore selectors from section div to header
+    $('div.section.toc-ignore')
+        .removeClass('toc-ignore')
+        .children('h1,h2,h3,h4,h5').addClass('toc-ignore');
+
+    // establish options
+    var options = {
+      selectors: "h1,h2,h3,h4,h5",
+      theme: "bootstrap3",
+      context: '.toc-content',
+      hashGenerator: function (text) {
+        return text.replace(/[.\\/?&!#<>]/g, '').replace(/\s/g, '_');
+      },
+      ignoreSelector: ".toc-ignore",
+      scrollTo: 0
+    };
+    options.showAndHide = true;
+    options.smoothScroll = true;
+
+    // tocify
+    var toc = $("#TOC").tocify(options).data("toc-tocify");
+});
+</script>
+
+<!-- dynamically load mathjax for compatibility with self-contained -->
+<script>
+  (function () {
+    var script = document.createElement("script");
+    script.type = "text/javascript";
+    script.src  = "https://mathjax.rstudio.com/latest/MathJax.js?config=TeX-AMS-MML_HTMLorMML";
+    document.getElementsByTagName("head")[0].appendChild(script);
+  })();
+</script>
+
+</body>
+</html>

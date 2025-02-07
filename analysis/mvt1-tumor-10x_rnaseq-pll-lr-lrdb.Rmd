@@ -1,0 +1,2944 @@
+---
+title: "10x RNA-seq analysis of MVT1 cancer and microenvironment in tumor and mets"
+subtitle: "Analysis of ligand-receptor interactions using LRdb from SingleCellSignalR in primary tumor, lung and liver metastases"
+author: "Francesc Castro-Giner"
+date: '`r format(Sys.Date(), "%B %d, %Y")`'
+output: workflowr::wflow_html
+editor_options:
+  chunk_output_type: console
+params:
+  date: '`r format(Sys.Date(), "%B %d, %Y")`'
+  cellranger_count_dir: ./data/rnaseq/p26532_o28268/pipelines/cellranger_featurebarcodes
+  output_dir: ./output/p26532_o28268/p26532_o28268-10x_rnaseq-pll-lr-hq-lrdb
+  ncores: 6
+---
+
+
+## Load libraries, additional functions and data
+
+Setup environment
+```{r setup, include=TRUE, warning=FALSE, message=FALSE}
+knitr::opts_chunk$set(results='asis', echo=TRUE, message=FALSE, warning=FALSE, error=FALSE, fig.align = 'center', fig.width = 3.5, fig.asp = 0.618, dpi = 600, dev = c("png", "pdf"), fig.showtext = FALSE, engine.opts = list(bash = "-l"))
+
+options(stringsAsFactors = FALSE)
+
+use_seed <- 1100101
+set.seed(use_seed)
+
+dir.create(params$output_dir, recursive = TRUE, showWarnings = FALSE)
+```
+
+Load packages
+```{r load-libraries}
+library(tidyverse)
+library(showtext)
+library(foreach)
+library(DT)
+library(knitr)
+library(kableExtra)
+library(cowplot)
+library(colorblindr)
+library(openxlsx)
+library(ggpubr)
+library(magrittr)
+
+library(org.Mm.eg.db)
+library(org.Hs.eg.db)
+library(ComplexHeatmap)
+library(circlize)
+library(ggbeeswarm)
+# library(arsenal)
+library(RColorBrewer)
+# library(ggpubr)
+# library(pheatmap)
+# library(patchwork)
+# library(ggrepel)
+# library(openxlsx)
+# 
+library(scater)
+# library(DropletUtils)
+# library(Seurat)
+# library(scran)
+# library(BiocSingular)
+# library(batchelor)
+# library(bluster)
+# library(celldex)
+# library(SingleR)
+# library(speckle)
+# library(miloR)
+# library(clusterProfiler)
+```
+
+Set font family for figures
+```{r set-font, eval = FALSE}
+font_add("Helvetica", "./configuration/fonts/Helvetica.ttc")
+showtext_auto()
+```
+
+Load ggplot theme
+```{r ggplot-theme}
+source("./configuration/rmarkdown/ggplot_theme.R")
+source("./configuration/rmarkdown/color_palettes.R")
+```
+
+Load custom functions
+```{r load-functions}
+iscore.permutation.test <- function(x, y, n){
+  original <- avg_ligand*avg_receptor
+  distribution <- foreach(i=1:n, .combine = c) %do% {
+    x*(sample(y, length(y), FALSE))
+  }
+  foreach(o = original, .combine = c) %do% {
+    sum(distribution >= o)/length(distribution)
+  }
+}
+normalize01 <- function(x) {
+  (x - min(x)) / ( max(x) -  min(x))
+}
+```
+
+Clean files generated in previous runs
+```{r clean-files}
+rmd_file <- current_input()
+if(!is.null(rmd_file)) {
+  figures_dir <- file.path('./docs/figure',rmd_file)
+  if(dir.exists(figures_dir)) {
+    unlink(file.path(figures_dir, "*"))
+  }
+}
+
+```
+
+
+## Description
+
+### LR database : SingleCellSignalR
+
+Database for ligand-receptor interaction was obtained from SingleCellSignalR, converting human genes to mouse orthologs.
+
+Reference : [Cabello-Aguilar, et al., NAS (2021) ](https://academic.oup.com/nar/article/48/10/e55/5810485)
+
+> We decided to favor interpretable inferences that are supported by the literature or experimental data. Accordingly, we compiled the content of existing databases that contain such LR pairs: FANTOM5 (6), HPRD (27), HPMR (28), the IUPHAR/BPS Guide to Pharmacology (29) and UniProtKB/Swissprot (30) annotations related to families of ligands or receptors covered in the previous databases. We also extracted LR pairs, with respective participants annotated as ligand or receptor in GO (31), from Reactome (32) pathways. We required GO Cellular Compartment (GOCC) annotation ‘receptor complex’ (GO:0043235) for receptors, and ‘extracellular space’ (GO:0005615) or ‘extracellular region’ (GO:0005576) for ligands. Reactome pathways were downloaded from Pathway Commons (33). That yielded 3191 pairs. Inspection of the latter revealed 106 dubious cases, i.e. ligand–ligand or receptor–receptor, or non-secreted gene products. After elimination, we obtained 3085 reliable LR pairs, which we extended with 166 pairs extracted from cellsignaling.com maps and related literature manually to reach 3251 LR pairs (Figure 1A and B). All the gene symbols were converted into the latest HUGO version as part of the curation process.
+
+### List of cytokines genes 
+
+Cytokines genes obtained from GO (GO:0005125) cytokine activity ([definition](http://www.informatics.jax.org/vocab/gene_ontology/GO:0005125) and [gene list](http://www.informatics.jax.org/vocab/gene_ontology/GO:0005125)), defined as 'The activity of a soluble extracellular gene product that interacts with a receptor to effect a change in the activity of the receptor to control the survival, growth, differentiation and effector function of tissues and cells.'
+
+### Cytokine-receptor interaction
+
+We scored Ligand-receptor interaction as the product of average receptor expression across all cancer cells  and the average ligand expression across all cells of TME [Kumar et al., Cell (2018)](https://www.sciencedirect.com/science/article/pii/S221112471831636X#sec4.5.5). The interaction was calculated at each mouse replicate and site. Only those ligands and receptors expressed (above 0 counts) in at least 2% of the cells were considered for the analysis. 
+
+For this analysis we use ligand-receptor interactions from LRdb ([Cabello-Aguilar, et al., NAS (2021) ](https://academic.oup.com/nar/article/48/10/e55/5810485)), selection only those ligands defined as cytokines in the [GO:0005125 cytokine activity  set](http://www.informatics.jax.org/vocab/gene_ontology/GO:0005125).
+
+Calculate interaction score by site and mouse,as detailted in [Kumar et al., Cell (2018)](https://www.sciencedirect.com/science/article/pii/S221112471831636X#sec4.5.5)
+
+
+## Data processing
+
+### SingleCellSignalR: LRdb
+```{r lrdb-generate, eval = FALSE}
+library(SingleCellSignalR)
+library(biomaRt) 
+# Convert from Hs to Mm
+use_genes <- c(LRdb$ligand, LRdb$receptor) %>% unique()
+
+# using ensembl archive version to avoid connection problems
+mart_human <- useMart("ensembl", dataset = "hsapiens_gene_ensembl", host = "https://dec2021.archive.ensembl.org/") 
+mart_mouse <- useMart("ensembl", dataset = "mmusculus_gene_ensembl", host = "https://dec2021.archive.ensembl.org/")
+
+hs_to_mm <- getLDS(
+  attributes = c("hgnc_symbol"), 
+  filters = "hgnc_symbol", 
+  values = use_genes,
+  mart = mart_human, 
+  attributesL = c("external_gene_name"), 
+  martL = mart_mouse
+)
+
+LRdbmm <- LRdb %>% 
+  rename('ligand' = 'hs_ligand', 'receptor' = 'hs_receptor') %>%
+  left_join(hs_to_mm, by = c("hs_ligand" = "HGNC.symbol")) %>% 
+  rename('Gene.name' = 'mm_ligand') %>% 
+  left_join(hs_to_mm, by = c("hs_receptor" = "HGNC.symbol")) %>% 
+  rename('Gene.name' = 'mm_receptor')
+
+use_file <- 'data/resources/receptor_ligand_db/LRdb.rds'
+dir.create(dirname(use_file), recursive = TRUE, showWarnings = FALSE)
+saveRDS(LRdbmm, file = use_file)
+```
+
+### List of cytokines genes
+```{r cytokines-gene-list, eval = FALSE}
+cytokines_eg <- as.list(org.Mm.egGO2ALLEGS[mappedkeys(org.Mm.egGO2ALLEGS)])[['GO:0005125']]
+xx <- as.list(org.Mm.egALIAS2EG)
+cytokines_symbol <- names(xx)[xx %in% cytokines_eg]
+# cytokines_symbol <- cytokines_symbol[cytokines_symbol %in% rownames(sce_comb)]
+cytokines_eg <- as.list(org.Hs.egGO2ALLEGS[mappedkeys(org.Hs.egGO2ALLEGS)])[['GO:0005125']]
+xx <- as.list(org.Hs.egALIAS2EG)
+cytokines_symbol_hs <- names(xx)[xx %in% cytokines_eg]
+res <- list(
+  mm = cytokines_symbol,
+  hs = cytokines_symbol_hs
+)
+saveRDS(res, file.path(params$output_dir, 'cytokines_list_GO_0005125.rds'))
+```
+
+### Load data
+```{r load-data, eval = TRUE}
+sce_cancer <- readRDS(file.path('./output/p26532_o28268/p26532_o28268-10x_rnaseq-pll-cancer_cell', 'sce_integrated.rds'))
+sce_tme <- readRDS(file.path("./output/p26532_o28268/p26532_o28268-10x_rnaseq-pll-tme-hq", 'sce_integrated-tme.rds'))
+sr_immgen <- readRDS(file.path("./output/p26532_o28268/p26532_o28268-10x_rnaseq-pll-tme-hq", 'SingleR_ImmGenData_annotation-tme.rds'))
+
+sce_cancer$mean_logcounts <- colMeans2(logcounts(sce_cancer))
+sce_tme$mean_logcounts <- colMeans2(logcounts(sce_tme))
+
+sce_tme$celltype_immgen_pruned.labels <- sr_immgen$pred$pruned.labels
+sce_tme$celltype_immgen_pruned.labels.fine <- sr_immgen$pred_fine$pruned.labels
+
+# Load cytokines list
+cytokines_go_0005125 <- readRDS(file.path(params$output_dir, 'cytokines_list_GO_0005125.rds'))
+cytokines_symbol <- cytokines_go_0005125$mm
+cytokines_symbol_hs <- cytokines_go_0005125$hs
+
+# Site levels order
+site_caps_ord <- c('Primary tumor', 'Liver', 'Lung')
+
+# Add new colData vars
+colData(sce_cancer) <- colData(sce_cancer) %>% data.frame %>% 
+  mutate(
+    site = ifelse(site == 'liver', 'Liver', site),
+    site = ifelse(site == 'lung', 'Lung', site),
+    site = ifelse(site == 'primary_tumor', 'Primary tumor', site),
+    site = factor(site, levels = site_caps_ord)
+  ) %>% 
+  DataFrame
+colData(sce_tme) <- colData(sce_tme) %>% data.frame %>% 
+  mutate(
+    site = ifelse(site == 'liver', 'Liver', site),
+    site = ifelse(site == 'lung', 'Lung', site),
+    site = ifelse(site == 'primary_tumor', 'Primary tumor', site),
+    site = factor(site, levels = site_caps_ord)
+  ) %>% 
+  DataFrame
+
+
+# Load LRdb
+LRdbmm_cytokines <- readRDS('data/resources/receptor_ligand_db/LRdb.rds') %>% 
+  filter(mm_ligand %in% cytokines_symbol)
+genes_ligands <- LRdbmm_cytokines$mm_ligand 
+genes_receptors <-  LRdbmm_cytokines$mm_receptor
+```
+
+
+
+
+
+### Select specific interactions
+```{r cellphonedb-selected-interactions}
+selected_interacting_pair <- c(
+  'Acvr1-Bmpr2-Bmp6',
+  'Bmpr1a-Bmpr2-Bmp6',
+  'Bmpr1a-Bmpr2-Bmp2',
+  
+  'Tnfrsf1a-Grn',
+  'Tnfrsf1b-Grn',
+  'Ide-Ccl9',  # Ccl9 and Ccl6 are othologous for CCL23
+  'Ide-Ccl6',
+  
+  'Grn-Tnfrsf1a',
+  'Grn-Tnfrsf1b',
+  'Ccl9-Ide',  # Ccl9 and Ccl6 are othologous for CCL23
+  'Ccl6-Ide',
+  
+  'Bmp2-Bmpr2',
+  'Bmp2-Bmpr1a',
+  'Spp1-Itgb1'
+  )
+
+# selected_interacting_pair <- c('Ccl9_Ide', 'Ccl6_Ide', 'Acvr1_Bmpr2_Bmp6',
+#                                'Bmpr1a_Bmpr2_Bmp6', 'Bmpr1a_Bmpr2_Bmp6',
+#                                'Bmpr1a_Bmpr2_Bmp2', 'Grn_Tnfrsf1b',
+#                                'Grn_Egfr', 'Grn_Tnfrsf1a'
+#                                )
+                               
+# grep('Ccl9_Ide', cpd_merged$interacting_pair, ignore.case = T, value = T) %>% unique
+# grep('Ccl6_Ide', cpd_merged$interacting_pair, ignore.case = T, value = T) %>% unique
+# grep('Acvr1_Bmpr2_Bmp6', cpd_merged$interacting_pair, ignore.case = T, value = T) %>% unique
+# grep('Bmpr1a_Bmpr2_Bmp6', cpd_merged$interacting_pair, ignore.case = T, value = T) %>% unique
+# grep('Bmpr1a_Bmpr2_Bmp2', cpd_merged$interacting_pair, ignore.case = T, value = T) %>% unique
+# grep('Grn_Tnfrsf1b', cpd_merged$interacting_pair, ignore.case = T, value = T) %>% unique
+# grep('Grn_Egfr', cpd_merged$interacting_pair, ignore.case = T, value = T) %>% unique
+# grep('Grn_Tnfrsf1a', cpd_merged$interacting_pair, ignore.case = T, value = T) %>% unique
+```
+
+
+
+
+
+## Cytokine-receptor interaction
+```{r lrdb-mouse-site, eval = FALSE}
+# Calculate stats
+use_mouse <- "mouse_1"
+use_site <- "lung"
+iscore_df <- foreach(use_mouse = sce_cancer$mouse_id %>% unique, .combine = rbind) %do% {
+  # Select shared sites in cancer and tme sets
+  cancer_sites <- colData(sce_cancer) %>% data.frame %>% filter(mouse_id == use_mouse) %>% collect %>% .[['site']] %>% unique
+  tme_sites <- colData(sce_tme) %>% data.frame %>% filter(mouse_id == use_mouse) %>% collect %>% .[['site']] %>% unique
+  use_sites <- intersect(cancer_sites, tme_sites)
+  use_site <-  use_sites[1]
+  foreach(use_site = use_sites, .combine = rbind) %do% {
+    # Subset of cancer cells
+    use_cols <-  sce_cancer$site == use_site & sce_cancer$mouse_id == use_mouse
+    use_rows <- rownames(sce_cancer) %in% genes_receptors
+    use_sce_cancer <- sce_cancer[use_rows, use_cols]
+    
+    # Subset of tme cells
+    use_cols <-  sce_tme$site == use_site & sce_tme$mouse_id == use_mouse
+    use_rows <- rownames(sce_tme) %in% genes_ligands
+    use_sce_tme <- sce_tme[use_rows, use_cols]
+    
+    # Subset of database with ligands and receptors in the corresponding sce
+    use_db <- LRdbmm_cytokines %>% 
+      dplyr::filter((mm_ligand %in% rownames(use_sce_tme)) & (mm_receptor %in% rownames(use_sce_cancer))) %>% 
+      dplyr::select(mm_ligand, mm_receptor) %>% 
+      unique
+    
+    # Select ligand-receptor matrix
+    mat_ligand <- logcounts(use_sce_tme)[use_db$mm_ligand,]
+    mat_receptor <-  logcounts(use_sce_cancer)[use_db$mm_receptor,]
+    
+    # Filter ligands and receptors that are not expressed (Above 0 in >1% of samples)
+    prop_ligand <- rowSums(mat_ligand > 0) / ncol(mat_ligand)
+    prop_receptor <- rowSums(mat_receptor > 0) / ncol(mat_receptor)
+    use_rows <- prop_ligand > 0.01 & prop_receptor > 0.01
+    
+    # Calculate iscore:  the product of average receptor expression across all cells of cell type A and the average ligand expression across all cells of cell type B.
+    avg_ligand <- mat_ligand[use_rows,] %>% rowMeans
+    avg_receptor <-  mat_receptor[use_rows,] %>% rowMeans
+    iscore <-  (avg_ligand*avg_receptor) %>% set_names(paste(names(avg_ligand), names(avg_receptor), sep = '-'))
+    iscore_p.val <- iscore.permutation.test(avg_ligand, avg_receptor, 1000)
+      
+    # Calculate iscore scaling expression values by sample using the average across all genes
+    avg_ligand_scaled <- scale(
+      mat_ligand[use_rows,] %>% as.matrix, 
+      scale = use_sce_tme$mean_logcounts, 
+      center = FALSE) %>% 
+      rowMeans %>% 
+      set_names(rownames(mat_ligand)[use_rows])
+    avg_receptor_scaled <- scale(
+      mat_receptor[use_rows,] %>% as.matrix, 
+      scale = use_sce_cancer$mean_logcounts, 
+      center = FALSE) %>% 
+      rowMeans %>% 
+      set_names(rownames(mat_receptor)[use_rows])
+    
+    iscore_scaled <-  (avg_ligand_scaled*avg_receptor_scaled) %>% 
+      set_names(paste(names(avg_ligand_scaled), names(avg_receptor_scaled), sep = '-'))
+    iscore_scaled_p.val <- iscore.permutation.test(avg_ligand_scaled, avg_receptor_scaled, 1000)
+
+    data.frame(
+      lr = names(iscore), 
+      site = use_site,
+      mouse_id = use_mouse, 
+      iscore,
+      p.value = iscore_p.val,
+      iscore_scaled,
+      p.value_scaled = iscore_scaled_p.val
+    )
+  }
+}
+
+# Add additional variables 
+iscore_df <- iscore_df %>%
+  mutate(
+    mouse_id =  gsub('mouse_', '', mouse_id),
+    site_mouse = paste(site, mouse_id, sep = '_')
+  )
+
+# Add normalized scores by lr
+iscore_df <- foreach(i = unique(iscore_df$lr), .combine = rbind) %do% {
+  iscore_df %>%
+    filter(lr == i) %>%
+    mutate(iscore_norm = normalize01(iscore))
+}
+
+
+saveRDS(iscore_df, file = file.path(params$output_dir, 'cytokine_receptor_iscore.rds'))
+
+# One sided T-test
+i <- 'Bmp2-Bmpr2'
+iscore_ll_ttest <- foreach(i = unique(iscore_df$lr), .combine = rbind) %do% {
+  x <- iscore_df %>% filter(site %in% c('Lung', 'Liver')) %>% filter(lr == i)
+  
+  iscore_liver <- x %>% filter(site == 'Liver') %>% pull(iscore)
+  iscore_lung <- x %>% filter(site == 'Lung') %>% pull(iscore)
+  
+  # Add 0 to missing data  
+  if(length(iscore_liver) < 3)
+    iscore_liver <- c(iscore_liver, rep(0, 3-length(iscore_liver)))
+  if(length(iscore_lung) < 3)
+    iscore_lung <- c(iscore_lung, rep(0, 3-length(iscore_lung)))
+  
+  x_fc <- log2(mean(iscore_lung)/mean(iscore_liver))
+  
+  if(length(x_fc) >0 & !is.na(x_fc)) {
+    if(x_fc < 0)
+      t.res <-try(t.test(iscore_liver, iscore_lung, alternative = 'greater'), silent = TRUE)
+    if(x_fc > 0)
+      t.res <-try(t.test(iscore_liver, iscore_lung, alternative = 'less'), silent = TRUE)
+    data.frame(lr = i, p=t.res$p.value, 
+               m_liver = t.res$estimate['mean of x'], 
+               m_lung = t.res$estimate['mean of y'], 
+               t = t.res$statistic, logFC = x_fc)
+  } else {
+    data.frame(lr = i, p=NA, m_liver = NA, m_lung = NA, t=NA, logFC=NA)
+  }
+}
+
+saveRDS(iscore_ll_ttest, file = file.path(params$output_dir, 'cytokine_receptor_iscore_ll_ttest.rds'))
+
+```
+
+```{r lrdb-mouse-site-load}
+iscore_df <- readRDS(file.path(params$output_dir, 'cytokine_receptor_iscore.rds')) %>% 
+  mutate(site = factor(site, site_caps_ord))
+iscore_ll_ttest <- readRDS(file.path(params$output_dir, 'cytokine_receptor_iscore_ll_ttest.rds'))
+```
+
+### Tables of results
+
+#### Interaction score
+```{r lrdb-mouse-site-table}
+iscore_df %>% 
+  datatable(., 
+            rownames = FALSE, 
+            filter = 'top', 
+            caption = 'Cytokine-receptor interaction score across mouse and sites',
+            extensions = 'Buttons', 
+            options = list(
+              dom = 'Blfrtip',
+              buttons = c('csv', 'excel')
+              )) %>% 
+  formatSignif(c('p.value', 'p.value_scaled')) %>% 
+  formatRound(c('iscore', 'iscore_scaled'))
+```
+
+#### T-test stats
+```{r lrdb-mouse-site-ll-ttest-table}
+iscore_ll_ttest %>% 
+  datatable(., 
+            rownames = FALSE, 
+            filter = 'top', 
+            caption = 'One-sided T-test between lung and liver. LogFC representes the ratio of average score in lung over liver',
+            extensions = 'Buttons', 
+            options = list(
+              dom = 'Blfrtip',
+              buttons = c('csv', 'excel')
+              )) %>% 
+  formatSignif(c('p', 'm_liver', 'm_lung')) %>% 
+  formatRound(c('t', 'logFC'))
+```
+
+### Dotplot
+Showing interactions with an interaction score P value < 0.05 in at least one replicate.
+```{r lrdb-mouse-site-dotplot-conf}
+# n_top <- 20
+use_data <- iscore_df
+
+# Select top interactions based on sum of scores in all sites/replicates
+# lr_top <- use_data %>% 
+#   group_by(lr) %>% 
+#   summarise(sum = sum(iscore)) %>% 
+#   arrange(desc(sum)) %>% 
+#   head(n_top) %>% 
+#   pull(lr)
+
+# Select top interactions based on iscore P value
+lr_top <- use_data %>% 
+  filter(p.value < 0.05) %>%
+  pull(lr) %>% 
+  unique
+# Select top interactions based on t-test
+# lr_top <- iscore_ll_ttest %>% 
+#   arrange(p) %>% 
+#   head(n_top) %>% 
+#   pull(lr) %>% 
+#   head(20)
+# row_hclust_labels <- lr_top
+# 
+# iscore_ll_ttest %>% filter(
+#   lr %in% c('Spp1-Itgb1', 'Bmp2-Bmpr2')
+# )
+# 
+# xfc <- iscore_ll_ttest %>% 
+#   arrange(desc(abs(logFC))) %>% 
+#   pull('lr')
+# which(xfc == 'Spp1-Itgb1')
+# which(xfc == 'Bmp2-Bmpr2')
+# xfc <- iscore_ll_ttest %>% 
+#   arrange(p) %>% 
+#   pull('lr')
+# which(xfc == 'Spp1-Itgb1')
+# which(xfc == 'Bmp2-Bmpr2')
+# iscore_ll_ttest %>% filter(lr == 'Spp1-Itgb1')
+
+# Generate matrix of iscore to cluster lr pairs
+use_mat <- use_data %>%
+  dplyr::select(lr, iscore, site_mouse) %>%
+  pivot_wider(names_from = site_mouse, values_from = iscore) %>%
+  column_to_rownames('lr')
+use_mat[is.na(use_mat)] <- 0
+use_mat <- use_mat[lr_top,]
+
+row_hclust <- hclust(dist(use_mat))
+row_hclust_labels <- row_hclust$labels[row_hclust$order]
+
+# Large plot
+use_data_top <- use_data %>% 
+  filter(lr %in% row_hclust_labels) %>% 
+  mutate(lr = factor(lr, levels = row_hclust_labels))
+
+plot_iscore <- use_data_top %>% 
+  ggplot(aes(mouse_id, lr, size = iscore, color = -log10(p.value))) +
+    geom_point() +
+    # geom_point(data = use_data_top %>% filter(p.value <= 0.05), pch = 21, color = 'black', stroke = 1) +
+    # geom_point(data = use_data_top %>% filter(p.value > 0.05), pch = 21, color = 'grey70', stroke = 1, show.legend = FALSE) +
+    scale_color_distiller(palette = "Purples", na.value = "grey70", direction = 1) +
+    # scale_color_distiller(na.value = "grey70", direction = 1) +
+    # scale_color_viridis_c(na.value = "grey70") +
+    # scale_colour_gradient2(midpoint = -log10(0.05), low = 'grey90', mid = 'grey90', high = 'firebrick')+
+    # scale_color_viridis_c(na.value = "grey70") +
+    facet_grid(~site, scales = 'free_x') +
+    labs(
+      y = '', 
+      x = 'Mouse replicate',
+      size = 'Interaction\nscore',
+      color = bquote("-log"[10] ~ .(paste0("(P-value)")))
+      # caption = paste('Showing top', n_top, 'L-R interactions pairs based total score')
+    ) +
+    theme(
+      panel.border = element_rect(color = "black", fill = NA, linewidth = 1),
+      # axis.text.x=element_blank(),
+      axis.ticks.x=element_blank(),
+      axis.line = element_blank(),
+      panel.grid.major.y = element_line(linewidth = 0.2, colour="grey60", linetype = 'dashed'),
+      # panel.grid.major.x = element_line(linewidth = 0.2, colour="grey60", linetype = 'dashed'),
+      strip.background = element_blank()#,
+      # strip.text.y = element_blank()
+      )
+
+# Plot wit selected interactions
+use_data_plot_selected <- use_data %>% 
+  filter(lr %in% selected_interacting_pair)
+
+plot_iscore_selected <- use_data_plot_selected %>% 
+  ggplot(aes(mouse_id, lr, size = iscore, color = -log10(p.value))) +
+    geom_point() +
+    # geom_point(data = use_data_plot_selected %>% filter(p.value <= 0.05), pch = 21, color = 'black', stroke = 1) +
+    # geom_point(data = use_data_plot_selected %>% filter(p.value > 0.05), pch = 21, color = 'grey70', stroke = 1, show.legend = FALSE) +
+    scale_color_distiller(palette = "Purples", na.value = "grey70", direction = 1) +
+    # scale_color_distiller(na.value = "grey70", direction = 1) +
+    # scale_color_viridis_c(na.value = "grey70") +
+    # scale_colour_gradient2(midpoint = -log10(0.05), low = 'grey90', mid = 'grey90', high = 'firebrick')+
+    # scale_color_viridis_c(na.value = "grey70") +
+    facet_grid(~site, scales = 'free_x') +
+    labs(
+      y = '', 
+      x = 'Mouse replicate',
+      size = 'Interaction\nscore',
+      color = bquote("-log"[10] ~ .(paste0("(P-value)")))
+      # caption = paste('Showing top', n_top, 'L-R interactions pairs based total score')
+    ) +
+    theme(
+      panel.border = element_rect(color = "black", fill = NA, linewidth = 1),
+      # axis.text.x=element_blank(),
+      axis.ticks.x=element_blank(),
+      axis.line = element_blank(),
+      panel.grid.major.y = element_line(linewidth = 0.2, colour="grey60", linetype = 'dashed'),
+      # panel.grid.major.x = element_line(linewidth = 0.2, colour="grey60", linetype = 'dashed'),
+      strip.background = element_blank()#,
+      # strip.text.y = element_blank()
+      )
+```
+
+#### Simple
+```{r lrdb-mouse-site-dotplot-simple, fig.width=5.2, fig.asp= 0.9}
+print(plot_iscore)
+```
+
+#### Additional T-test panel
+```{r lrdb-mouse-site-dotplot-pval, fig.width=5.2, fig.asp= 0.9}
+plot_iscore_legend <- cowplot::get_legend(plot_iscore)
+
+plot_p <- iscore_ll_ttest %>% 
+  filter(lr %in% use_data_top$lr) %>% 
+  mutate(lr = factor(lr, levels = levels(use_data_top$lr))) %>% 
+  ggplot(aes(x=-log10(p), y = lr)) +
+  geom_col(fill = 'grey70') +
+  scale_x_continuous(expand = c(0, 0)) +
+  theme(
+    axis.text.y = element_blank(),
+    axis.ticks.y = element_blank(),
+    axis.line.y = element_blank()
+  ) +
+  labs(
+    y = NULL, 
+    x = bquote("-log"[10] ~ .(paste0("(P-value)")))
+  )
+
+plot_grid(
+  plot_iscore + guides(color = "none", size = "none"), 
+  plot_p, 
+  plot_iscore_legend,
+  align = "h", 
+  axis= "tb",
+  nrow = 1, 
+  rel_widths = c(1, 0.3, 0.2))
+```
+
+#### Additional FC panel
+```{r lrdb-mouse-site-dotplot-fc, fig.width=5.2, fig.asp= 0.9}
+plot_iscore_legend <- cowplot::get_legend(plot_iscore)
+
+use_data_fc <- iscore_ll_ttest %>% 
+  filter(lr %in% use_data_top$lr) %>% 
+  mutate(lr = factor(lr, levels = levels(use_data_top$lr)))
+x_max <- use_data_fc$logFC %>% abs %>% max
+plot_fc <- use_data_fc %>% 
+  ggplot(aes(x=logFC, y = lr)) +
+  geom_col(fill = 'grey70') +
+  scale_x_continuous(expand = c(0, 0), limits = c(-x_max, x_max)) +
+  theme(
+    axis.text.y = element_blank(),
+    axis.ticks.y = element_blank(),
+    axis.line.y = element_blank()
+  ) +
+  labs(
+    y = NULL, 
+    x = bquote("-log"[2] ~ .(paste0("(fold-change)")))
+  )
+
+plot_grid(
+  plot_iscore + guides(color = "none", size = "none"), 
+  plot_fc, 
+  plot_iscore_legend,
+  align = "h", 
+  axis= "tb",
+  nrow = 1, 
+  rel_widths = c(1, 0.4, 0.1))
+```
+
+#### Selected interactions - Simple
+```{r lrdb-mouse-site-dotplot-sel-simple, fig.width=4.2, fig.asp= 0.4}
+print(plot_iscore_selected)
+```
+
+#### Selected interactions - Additional T-test panel
+```{r lrdb-mouse-site-dotplot-sel-pval, fig.width=5.2, fig.asp= 0.4}
+plot_iscore_legend <- cowplot::get_legend(plot_iscore_selected)
+
+plot_p <- iscore_ll_ttest %>% 
+  filter(lr %in% use_data_plot_selected$lr) %>% 
+  ggplot(aes(x=-log10(p), y = lr)) +
+  geom_col(fill = 'grey70') +
+  scale_x_continuous(expand = c(0, 0)) +
+  theme(
+    axis.text.y = element_blank(),
+    axis.ticks.y = element_blank(),
+    axis.line.y = element_blank()
+  ) +
+  labs(
+    y = NULL, 
+    x = bquote("-log"[10] ~ .(paste0("(P-value)")))
+  )
+
+plot_grid(
+  plot_iscore_selected + guides(color = "none", size = "none"), 
+  plot_p, 
+  plot_iscore_legend,
+  align = "h", 
+  axis= "tb",
+  nrow = 1, 
+  rel_widths = c(1, 0.3, 0.2))
+```
+
+#### Selected interactions - Additional FC panel
+```{r lrdb-mouse-site-dotplot-sel-fc, fig.width=5.2, fig.asp= 0.4}
+plot_iscore_legend <- cowplot::get_legend(plot_iscore_selected)
+
+use_data_fc <- iscore_ll_ttest %>% 
+  filter(lr %in% use_data_plot_selected$lr) 
+x_max <- use_data_fc$logFC %>% abs %>% max
+plot_fc <- use_data_fc %>% 
+  ggplot(aes(x=logFC, y = lr)) +
+  geom_col(fill = 'grey70') +
+  scale_x_continuous(expand = c(0, 0), limits = c(-x_max, x_max)) +
+  theme(
+    axis.text.y = element_blank(),
+    axis.ticks.y = element_blank(),
+    axis.line.y = element_blank()
+  ) +
+  labs(
+    y = NULL, 
+    x = bquote("-log"[2] ~ .(paste0("(fold-change)")))
+  )
+
+plot_grid(
+  plot_iscore_selected + guides(color = "none", size = "none"), 
+  plot_fc, 
+  plot_iscore_legend,
+  align = "h", 
+  axis= "tb",
+  nrow = 1, 
+  rel_widths = c(1, 0.4, 0.1))
+```
+
+
+### Dotplot iscore-color
+```{r lrdb-mouse-site-dotplot-2-conf}
+# n_top <- 20
+use_data <- iscore_df
+
+# Select top interactions based on sum of scores in all sites/replicates
+# lr_top <- use_data %>% 
+#   group_by(lr) %>% 
+#   summarise(sum = sum(iscore)) %>% 
+#   arrange(desc(sum)) %>% 
+#   head(n_top) %>% 
+#   pull(lr)
+
+# Select top interactions based on iscore P value
+lr_top <- use_data %>% 
+  filter(p.value < 0.05) %>%
+  pull(lr) %>% 
+  unique
+# Select top interactions based on t-test
+# lr_top <- iscore_ll_ttest %>% 
+#   arrange(p) %>% 
+#   head(n_top) %>% 
+#   pull(lr) %>% 
+#   head(20)
+# row_hclust_labels <- lr_top
+# 
+# iscore_ll_ttest %>% filter(
+#   lr %in% c('Spp1-Itgb1', 'Bmp2-Bmpr2')
+# )
+# 
+# xfc <- iscore_ll_ttest %>% 
+#   arrange(desc(abs(logFC))) %>% 
+#   pull('lr')
+# which(xfc == 'Spp1-Itgb1')
+# which(xfc == 'Bmp2-Bmpr2')
+# xfc <- iscore_ll_ttest %>% 
+#   arrange(p) %>% 
+#   pull('lr')
+# which(xfc == 'Spp1-Itgb1')
+# which(xfc == 'Bmp2-Bmpr2')
+# iscore_ll_ttest %>% filter(lr == 'Spp1-Itgb1')
+
+# Generate matrix of iscore to cluster lr pairs
+use_mat <- use_data %>%
+  dplyr::select(lr, iscore, site_mouse) %>%
+  pivot_wider(names_from = site_mouse, values_from = iscore) %>%
+  column_to_rownames('lr')
+use_mat[is.na(use_mat)] <- 0
+use_mat <- use_mat[lr_top,]
+
+row_hclust <- hclust(dist(use_mat))
+row_hclust_labels <- row_hclust$labels[row_hclust$order]
+
+# Large plot
+use_data_top <- use_data %>% 
+  filter(lr %in% row_hclust_labels) %>% 
+  mutate(lr = factor(lr, levels = row_hclust_labels))
+
+plot_iscore <- use_data_top %>% 
+  # ggplot(aes(mouse_id, lr, size = iscore, color = -log10(p.value))) +
+  ggplot(aes(mouse_id, lr, size = -log10(p.value), color = iscore)) +
+    geom_point() +
+    # geom_point(data = use_data_top %>% filter(p.value <= 0.05), pch = 21, color = 'black', stroke = 1) +
+    # geom_point(data = use_data_top %>% filter(p.value > 0.05), pch = 21, color = 'grey70', stroke = 1, show.legend = FALSE) +
+    # geom_point(pch = 21, color = 'black', stroke = 1) +
+    scale_color_distiller(palette = "Purples", na.value = "grey70", direction = 1) +
+    # scale_color_distiller(na.value = "grey70", direction = 1) +
+    # scale_fill_viridis_c(na.value = "grey70") +
+    # scale_colour_gradient2(midpoint = -log10(0.05), low = 'grey90', mid = 'grey90', high = 'firebrick')+
+    # scale_color_viridis_log10scaled +
+    facet_grid(~site, scales = 'free_x') +
+    labs(
+      y = '', 
+      x = 'Mouse replicate',
+      color = 'Interaction\nscore',
+      size = bquote("-log"[10] ~ .(paste0("(P-value)")))
+      # caption = paste('Showing top', n_top, 'L-R interactions pairs based total score')
+    ) +
+    theme(
+      panel.border = element_rect(color = "black", fill = NA, linewidth = 1),
+      # axis.text.x=element_blank(),
+      axis.ticks.x=element_blank(),
+      axis.line = element_blank(),
+      panel.grid.major.y = element_line(linewidth = 0.2, colour="grey60", linetype = 'dashed'),
+      # panel.grid.major.x = element_line(linewidth = 0.2, colour="grey60", linetype = 'dashed'),
+      strip.background = element_blank()#,
+      # strip.text.y = element_blank()
+      )
+
+# Plot wit selected interactions
+use_data_plot_selected <- use_data %>% 
+  filter(lr %in% selected_interacting_pair)
+
+plot_iscore_selected <- use_data_plot_selected %>% 
+  # ggplot(aes(mouse_id, lr, size = iscore, color = -log10(p.value))) +
+  ggplot(aes(mouse_id, lr, size = -log10(p.value), color = iscore)) +
+    geom_point() +
+    # geom_point(data = use_data_plot_selected %>% filter(p.value <= 0.05), pch = 21, color = 'black', stroke = 1) +
+    # geom_point(data = use_data_plot_selected %>% filter(p.value > 0.05), pch = 21, color = 'grey70', stroke = 1, show.legend = FALSE) +
+    # geom_point(pch = 21, color = 'black', stroke = 1) +
+    scale_color_distiller(palette = "Purples", na.value = "grey70", direction = 1) +
+    # scale_color_distiller(na.value = "grey70", direction = 1) +
+    # scale_fill_viridis_c(na.value = "grey70") +
+    # scale_colour_gradient2(midpoint = -log10(0.05), low = 'grey90', mid = 'grey90', high = 'firebrick')+
+    # scale_color_viridis_log10scaled +
+    facet_grid(~site, scales = 'free_x') +
+    labs(
+      y = '', 
+      x = 'Mouse replicate',
+      color = 'Interaction\nscore',
+      size = bquote("-log"[10] ~ .(paste0("(P-value)")))
+      # caption = paste('Showing top', n_top, 'L-R interactions pairs based total score')
+    ) +
+    theme(
+      panel.border = element_rect(color = "black", fill = NA, linewidth = 1),
+      # axis.text.x=element_blank(),
+      axis.ticks.x=element_blank(),
+      axis.line = element_blank(),
+      panel.grid.major.y = element_line(linewidth = 0.2, colour="grey60", linetype = 'dashed'),
+      # panel.grid.major.x = element_line(linewidth = 0.2, colour="grey60", linetype = 'dashed'),
+      strip.background = element_blank()#,
+      # strip.text.y = element_blank()
+      )
+
+
+# Plot showing means for selected interactions
+use_data_plot_selected_mean <- use_data %>% 
+  filter(lr %in% selected_interacting_pair) %>% 
+  group_by(lr, site) %>% 
+  summarise(miscore = median(iscore)) %>% 
+  # mutate(site = ifelse(site == 'Primary tumor', 'Primary\ntumor', site)) %>% 
+  mutate(site = recode(site, `Primary tumor` = "Primary\ntumor"))
+plot_iscore_selected_mean <- use_data_plot_selected_mean %>% 
+  ggplot(aes(site, lr, size = miscore, color = miscore)) +
+    geom_point() +
+    scale_color_distiller(palette = "Purples", na.value = "grey70", direction = 1) +
+    # scale_color_viridis_c(na.value = "grey70") +
+    # scale_color_viridis_log10scaled +
+    scale_size(range=c(0.4, 4.5)) +
+    labs(
+      y = '', 
+      x = '',
+      size = 'Median\nscore',
+      color = 'Median\nscore'
+    ) +
+    theme(
+      panel.border = element_rect(color = "black", fill = NA, linewidth = 1),
+      axis.line = element_blank(),
+      # axis.text.x=element_blank(),
+      axis.ticks.x=element_blank(),
+      axis.line.x = element_blank(),
+      # panel.grid.major.y = element_line(linewidth = 0.2, colour="grey60", linetype = 'dashed'),
+      # panel.grid.major.x = element_line(linewidth = 0.2, colour="grey60", linetype = 'dashed'),
+      strip.background = element_blank()#,
+      # strip.text.y = element_blank()
+      )
+```
+
+#### Simple
+```{r lrdb-mouse-site-dotplot-2-simple, fig.width=5.2, fig.asp= 0.9}
+print(plot_iscore)
+```
+
+#### Additional T-test panel
+```{r lrdb-mouse-site-dotplot-2-pval, fig.width=5.2, fig.asp= 0.9}
+plot_iscore_legend <- cowplot::get_legend(plot_iscore)
+
+plot_p <- iscore_ll_ttest %>% 
+  filter(lr %in% use_data_top$lr) %>% 
+  mutate(lr = factor(lr, levels = levels(use_data_top$lr))) %>% 
+  ggplot(aes(x=-log10(p), y = lr)) +
+  geom_col(fill = 'grey70') +
+  scale_x_continuous(expand = c(0, 0)) +
+  theme(
+    axis.text.y = element_blank(),
+    axis.ticks.y = element_blank(),
+    axis.line.y = element_blank()
+  ) +
+  labs(
+    y = NULL, 
+    x = bquote("-log"[10] ~ .(paste0("(P-value)")))
+  )
+
+plot_grid(
+  plot_iscore + guides(color = "none", size = "none"), 
+  plot_p, 
+  plot_iscore_legend,
+  align = "h", 
+  axis= "tb",
+  nrow = 1, 
+  rel_widths = c(1, 0.3, 0.2))
+```
+
+#### Additional FC panel
+```{r lrdb-mouse-site-dotplot-2-fc, fig.width=5.2, fig.asp= 0.9}
+plot_iscore_legend <- cowplot::get_legend(plot_iscore)
+
+use_data_fc <- iscore_ll_ttest %>% 
+  filter(lr %in% use_data_top$lr) %>% 
+  mutate(lr = factor(lr, levels = levels(use_data_top$lr)))
+x_max <- use_data_fc$logFC %>% abs %>% max
+plot_fc <- use_data_fc %>% 
+  ggplot(aes(x=logFC, y = lr)) +
+  geom_col(fill = 'grey70') +
+  scale_x_continuous(expand = c(0, 0), limits = c(-x_max, x_max)) +
+  theme(
+    axis.text.y = element_blank(),
+    axis.ticks.y = element_blank(),
+    axis.line.y = element_blank()
+  ) +
+  labs(
+    y = NULL, 
+    x = bquote("-log"[2] ~ .(paste0("(fold-change)")))
+  )
+
+plot_grid(
+  plot_iscore + guides(color = "none", size = "none"), 
+  plot_fc, 
+  plot_iscore_legend,
+  align = "h", 
+  axis= "tb",
+  nrow = 1, 
+  rel_widths = c(1, 0.4, 0.1))
+```
+
+#### Selected interactions - Simple
+```{r lrdb-mouse-site-dotplot-2-sel-simple, fig.width=4.2, fig.asp= 0.4}
+print(plot_iscore_selected)
+```
+
+#### Selected interactions - Additional T-test panel
+```{r lrdb-mouse-site-dotplot-2-sel-pval, fig.width=5.2, fig.asp= 0.4}
+plot_iscore_legend <- cowplot::get_legend(plot_iscore_selected)
+
+plot_p <- iscore_ll_ttest %>% 
+  filter(lr %in% use_data_plot_selected$lr) %>% 
+  ggplot(aes(x=-log10(p), y = lr)) +
+  geom_col(fill = 'grey70') +
+  scale_x_continuous(expand = c(0, 0)) +
+  theme(
+    axis.text.y = element_blank(),
+    axis.ticks.y = element_blank(),
+    axis.line.y = element_blank()
+  ) +
+  labs(
+    y = NULL, 
+    x = bquote("-log"[10] ~ .(paste0("(P-value)")))
+  )
+
+plot_grid(
+  plot_iscore_selected + guides(color = "none", size = "none"), 
+  plot_p, 
+  plot_iscore_legend,
+  align = "h", 
+  axis= "tb",
+  nrow = 1, 
+  rel_widths = c(1, 0.3, 0.2))
+```
+
+#### Selected interactions - Additional FC panel
+```{r lrdb-mouse-site-dotplot-2-sel-fc, fig.width=5.2, fig.asp= 0.4}
+plot_iscore_legend <- cowplot::get_legend(plot_iscore_selected)
+
+use_data_fc <- iscore_ll_ttest %>% 
+  filter(lr %in% use_data_plot_selected$lr) 
+x_max <- use_data_fc$logFC %>% abs %>% max
+plot_fc <- use_data_fc %>% 
+  ggplot(aes(x=logFC, y = lr)) +
+  geom_col(fill = 'grey70') +
+  scale_x_continuous(expand = c(0, 0), limits = c(-x_max, x_max)) +
+  theme(
+    axis.text.y = element_blank(),
+    axis.ticks.y = element_blank(),
+    axis.line.y = element_blank()
+  ) +
+  labs(
+    y = NULL, 
+    x = bquote("-log"[2] ~ .(paste0("(fold-change)")))
+  )
+
+plot_grid(
+  plot_iscore_selected + guides(color = "none", size = "none"), 
+  plot_fc, 
+  plot_iscore_legend,
+  align = "h", 
+  axis= "tb",
+  nrow = 1, 
+  rel_widths = c(1, 0.4, 0.1))
+```
+
+
+#### Median values of selected interactions - Simple
+```{r lrdb-mouse-site-dotplot-2-sel-median-simple, fig.width= 3, fig.asp= 0.4}
+print(plot_iscore_selected_mean)
+```
+
+#### Median values of selected interactions - Additional T-test panel
+```{r lrdb-mouse-site-dotplot-2-sel-median-pval, fig.width=4.1, fig.asp= 0.3}
+plot_iscore_legend <- cowplot::get_legend(plot_iscore_selected_mean)
+
+plot_p <- iscore_ll_ttest %>% 
+  filter(lr %in% use_data_plot_selected_mean$lr) %>% 
+  ggplot(aes(x=-log10(p), y = lr)) +
+  geom_col(fill = 'grey70') +
+  scale_x_continuous(expand = c(0, 0)) +
+  theme(
+    axis.text.y = element_blank(),
+    axis.ticks.y = element_blank(),
+    axis.line.y = element_blank()
+  ) +
+  labs(
+    y = NULL, 
+    x = bquote("-log"[10] ~ .(paste0("(P-value)")))
+  )
+
+plot_grid(
+  plot_iscore_selected_mean + guides(color = "none", size = "none"), 
+  plot_p, 
+  plot_iscore_legend,
+  align = "h", 
+  axis= "tb",
+  nrow = 1, 
+  rel_widths = c(1, 0.5, 0.3))
+```
+
+#### Median values of selected interactions - Additional FC panel
+```{r lrdb-mouse-site-dotplot-2-sel-median-fc, fig.width=4.1, fig.asp= 0.3}
+plot_iscore_legend <- cowplot::get_legend(plot_iscore_selected_mean)
+
+use_data_fc <- iscore_ll_ttest %>% 
+  filter(lr %in% use_data_plot_selected_mean$lr) 
+x_max <- use_data_fc$logFC %>% abs %>% max
+
+plot_fc <- use_data_fc %>% 
+  ggplot(aes(x=logFC, y = lr)) +
+  geom_col(fill = 'grey70') +
+  scale_x_continuous(expand = c(0, 0), limits = c(-x_max, x_max)) +
+  theme(
+    axis.text.y = element_blank(),
+    axis.ticks.y = element_blank(),
+    axis.line.y = element_blank()
+  ) +
+  labs(
+    y = NULL, 
+    x = bquote("-log"[2] ~ .(paste0("(fold-change)")))
+  )
+
+plot_grid(
+  plot_iscore_selected_mean + guides(color = "none", size = "none"), 
+  plot_fc, 
+  plot_iscore_legend,
+  align = "h", 
+  axis= "tb",
+  nrow = 1, 
+  rel_widths = c(1, 0.5, 0.3))
+```
+
+
+### Stripchart
+
+```{r lrdb-mouse-site-stripchart, fig.width=5.2, fig.asp= 1}
+use_data <- iscore_df %>% 
+  mutate(
+    mouse_id =  gsub('mouse_', '', mouse_id),
+    site_mouse = paste(site, mouse_id, sep = '_')
+  ) 
+
+use_lr <- use_data %>% filter(p.value < 0.05) %>% pull(lr) %>% unique
+
+# Manual P-values
+lr_y_pos <- use_data %>% 
+  filter(lr %in% use_lr) %>% 
+  group_by(lr) %>% 
+  summarise(y.max = max(iscore)) %>% 
+  mutate(y.position = y.max + (0.10*y.max))
+
+use_test <- iscore_ll_ttest %>% filter(lr %in% use_lr) %>% 
+  dplyr::rename(group1=m_lung, group2=m_liver) %>% 
+  mutate(
+    groups =  list(c('Liver', 'Lung')),
+    xmin = 1,
+    xmax = 2,
+    p = format.pval(p, digits = 1)
+  ) %>% 
+  left_join(lr_y_pos)
+
+  
+use_data %>% 
+  filter(lr %in% use_lr) %>%
+  ggplot(aes(site, iscore, size = -log10(p.value))) +
+  geom_boxplot(alpha = 0.4, color = 'black', aes(fill = site), show.legend = FALSE, size = 0.25, fatten = 1) +
+  geom_quasirandom(method="smiley", width = 0.1, alpha = 1, size = 2, shape = 21, color = 'black', aes(fill = site), stroke = 0.4) +
+  # stat_compare_means(comparisons = list(c("Liver", "Lung")), method = 't.test') +
+  stat_pvalue_manual(use_test,  label = "p = {p}", vjust = -0.5, label.size = geom_text_size) +
+  # scale_fill_OkabeIto() +
+  # scale_color_OkabeIto() +
+  scale_fill_manual(values = site_palette) +
+  scale_color_manual(values = site_palette) +
+  scale_y_continuous(expand = c(0.05, 0, 0.35, 0)) +
+  scale_x_discrete(expand = c(0, 0.5)) +
+  facet_wrap(vars(lr), scales = 'free_y', ncol = 3) +
+  theme(
+    # axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1)
+    axis.text.x=element_blank(),
+    axis.ticks.x=element_blank(),
+    panel.border = element_rect(colour = "black", size=0.5),
+    axis.line = element_blank(),
+    strip.background = element_blank()
+  ) +
+  guides(fill = guide_legend(override.aes = list(size = 3))) +
+  labs(
+    fill = NULL, 
+    x = NULL,
+    y = 'Interaction score',
+    caption = 'One-sided T-test P value'
+  )
+
+```
+
+
+### Stripchart - Selected interactions
+
+```{r lrdb-mouse-site-sel-stripchart, fig.width=5.2, fig.asp = 0.3}
+use_data <- iscore_df %>% 
+  mutate(
+    mouse_id =  gsub('mouse_', '', mouse_id),
+    site_mouse = paste(site, mouse_id, sep = '_')
+  ) %>% 
+  filter(lr %in% selected_interacting_pair)
+
+
+
+use_lr <- intersect(selected_interacting_pair, use_data$lr)
+
+# Manual P-values
+lr_y_pos <- use_data %>% 
+  filter(lr %in% use_lr) %>% 
+  group_by(lr) %>% 
+  summarise(y.max = max(iscore)) %>% 
+  mutate(y.position = y.max + (0.10*y.max))
+
+use_test <- iscore_ll_ttest %>% filter(lr %in% use_lr) %>% 
+  dplyr::rename(group1=m_lung, group2=m_liver) %>% 
+  mutate(
+    groups =  list(c('Liver', 'Lung')),
+    xmin = 1,
+    xmax = 2,
+    p = format.pval(p, digits = 1)
+  ) %>% 
+  left_join(lr_y_pos)
+
+  
+use_data %>% 
+  filter(lr %in% use_lr) %>%
+  ggplot(aes(site, iscore, size = -log10(p.value))) +
+  geom_boxplot(alpha = 0.4, color = 'black', aes(fill = site), show.legend = FALSE, size = 0.25, fatten = 1) +
+  geom_quasirandom(method="smiley", width = 0.1, alpha = 1, size = 2, shape = 21, color = 'black', aes(fill = site), stroke = 0.4) +
+  # stat_compare_means(comparisons = list(c("Liver", "Lung")), method = 't.test') +
+  stat_pvalue_manual(use_test,  label = "p = {p}", vjust = -0.5, label.size = geom_text_size) +
+  # scale_fill_OkabeIto() +
+  # scale_color_OkabeIto() +
+  scale_fill_manual(values = site_palette) +
+  scale_color_manual(values = site_palette) +
+  scale_y_continuous(expand = c(0.05, 0, 0.35, 0)) +
+  scale_x_discrete(expand = c(0, 0.5)) +
+  facet_wrap(vars(lr), scales = 'free_y', ncol = 3) +
+  theme(
+    # axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1)
+    axis.text.x=element_blank(),
+    axis.ticks.x=element_blank(),
+    panel.border = element_rect(colour = "black", size=0.5),
+    axis.line = element_blank(),
+    strip.background = element_blank()
+  ) +
+  guides(fill = guide_legend(override.aes = list(size = 3))) +
+  labs(
+    fill = NULL, 
+    x = NULL,
+    y = 'Interaction score',
+    caption = 'One-sided T-test P value'
+  )
+
+```
+
+
+
+
+## Cytokine-receptor interaction by cell type
+```{r lrdb-mouse-site-ct, eval = FALSE}
+# Calculate stats
+cell_type_var <- "celltype_immgen_pruned.labels"
+use_mouse <- "mouse_3"
+use_site <- "bone"
+cell_type <- "Endothelial cells"
+
+iscore_df <- foreach(use_mouse = sce_cancer$mouse_id %>% unique, .combine = rbind) %do% {
+  # cat(use_mouse)
+  # Select shared sites in cancer and tme sets
+  cancer_sites <- colData(sce_cancer) %>% data.frame %>% filter(mouse_id == use_mouse) %>% collect %>% .[['site']] %>% unique
+  tme_sites <- colData(sce_tme) %>% data.frame %>% filter(mouse_id == use_mouse) %>% collect %>% .[['site']] %>% unique
+  use_sites <- intersect(cancer_sites, tme_sites)
+  
+  use_site <- use_sites[1]
+  foreach(use_site = use_sites, .combine = rbind) %do% {
+    # cat(use_mouse, use_site, "\n")
+    # Subset of cancer cells
+    use_cols <-  sce_cancer$site == use_site & sce_cancer$mouse_id == use_mouse
+    use_rows <- rownames(sce_cancer) %in% genes_receptors
+    use_sce_cancer <- sce_cancer[use_rows, use_cols]
+    
+    # Subset of tme cells
+    use_cols <-  sce_tme$site == use_site & sce_tme$mouse_id == use_mouse
+    cell_type_counts <- colData(sce_tme[,use_cols])[,cell_type_var] %>% table
+    tme_cell_types <- cell_type_counts[cell_type_counts > 20] %>% names
+    if(length(tme_cell_types) > 0) {
+      foreach(cell_type = tme_cell_types, .combine = rbind) %do% {
+        
+        # cat(use_mouse,use_site, cell_type, "\n")
+        use_cols <-  sce_tme$site == use_site & sce_tme$mouse_id == use_mouse & colData(sce_tme)[,cell_type_var] == cell_type
+        use_cols[is.na(use_cols)] <- FALSE
+        use_rows <- rownames(sce_tme) %in% genes_ligands
+        use_sce_tme <- sce_tme[use_rows, use_cols]
+     
+        # Subset of database with ligands and receptors in the corresponding sce
+        use_db <- LRdbmm_cytokines %>% 
+          dplyr::filter((mm_ligand %in% rownames(use_sce_tme)) & (mm_receptor %in% rownames(use_sce_cancer))) %>% 
+          dplyr::select(mm_ligand, mm_receptor) %>% 
+          unique
+        
+        # Select ligand-receptor matrix
+        mat_ligand <- logcounts(use_sce_tme)[use_db$mm_ligand,]
+        mat_receptor <-  logcounts(use_sce_cancer)[use_db$mm_receptor,]
+        
+        # Filter ligands and receptors that are not expressed (Above 0 in >2% of cancer samples and >20% of tme cell type cells)
+        prop_ligand <- rowSums(mat_ligand > 0) / ncol(mat_ligand)
+        prop_receptor <- rowSums(mat_receptor > 0) / ncol(mat_receptor)
+        use_rows <- prop_ligand > 0.20 & prop_receptor > 0.02
+        
+        if(sum(use_rows) > 1) {
+          # Calculate iscore:  the product of average receptor expression across all cells of cell type A and the average ligand expression across all cells of cell type B. 
+          avg_ligand <- mat_ligand[use_rows,] %>% rowMeans
+          avg_receptor <-  mat_receptor[use_rows,] %>% rowMeans
+          iscore <-  (avg_ligand*avg_receptor) %>% set_names(paste(names(avg_ligand), names(avg_receptor), sep = '-'))
+          iscore_p.val <- iscore.permutation.test(avg_ligand, avg_receptor, 1000)
+      
+          data.frame(
+            lr = names(iscore), 
+            site = use_site, 
+            cell_type = cell_type, 
+            mouse_id = use_mouse, 
+            iscore, 
+            p.value = iscore_p.val)
+        }
+      }
+    }
+  }
+
+}
+
+
+# Add additional variables 
+iscore_df <- iscore_df %>% 
+  mutate(
+    mouse_id =  gsub('mouse_', '', mouse_id),
+    site_mouse = paste(site, mouse_id, sep = '_'),
+    ct_site_mouse = paste(cell_type, site, mouse_id, sep = '_'),
+    ct_lr = paste(cell_type, lr, sep = '_')
+  )
+
+# Add normalized scores by lr and cell type
+iscore_df <- foreach(i = unique(iscore_df$ct_lr), .combine = rbind) %do% {
+  iscore_df %>%
+    filter(ct_lr == i) %>%
+    mutate(iscore_norm = normalize01(iscore))
+}
+
+saveRDS(iscore_df, file = file.path(params$output_dir, 'cytokine_receptor_celltype_iscore.rds'))
+
+# In order to be able to compare iscore in cell types not identifyed in one of the
+# sites (for example, endothelial cells in Lung), I add 0 to the data.
+i <- 'Spp1-Cd44'
+j <- 'Macrophages'
+iscore_ll_ttest <- foreach(i = unique(iscore_df$lr), .combine = rbind) %do% {
+  x_i <- iscore_df %>% filter(site %in% c('Lung', 'Liver')) %>% filter(lr == i)
+  foreach(j = unique(x_i$cell_type), .combine = rbind) %do% {
+    x_j <- x_i %>% filter(cell_type == j)
+    iscore_liver <- x_i %>% filter(cell_type == j & site == 'Liver') %>% pull(iscore)
+    iscore_lung <- x_i %>% filter(cell_type == j & site == 'Lung') %>% pull(iscore)
+    
+    if(length(iscore_liver) < 3)
+      iscore_liver <- c(iscore_liver, rep(0, 3-length(iscore_liver)))
+    if(length(iscore_lung) < 3)
+      iscore_lung <- c(iscore_lung, rep(0, 3-length(iscore_lung)))
+    
+    x_fc <- log2(mean(iscore_lung)/mean(iscore_liver))
+  
+    if(length(x_fc) >0 & !is.na(x_fc)) {
+      if(x_fc < 0)
+        t.res <-try(t.test(iscore_liver, iscore_lung, alternative = 'greater'), silent = TRUE)
+      if(x_fc > 0)
+        t.res <-try(t.test(iscore_liver, iscore_lung, alternative = 'less'), silent = TRUE)
+      data.frame(cell_type = j, lr = i, p=t.res$p.value, 
+                 m_liver = t.res$estimate['mean of x'], 
+                 m_lung = t.res$estimate['mean of y'], 
+                 t = t.res$statistic, logFC = x_fc)
+    } else {
+      data.frame(cell_type = j,lr = i, p=NA, m_liver = NA, m_lung = NA, t=NA, logFC=NA)
+    }
+  }
+}
+saveRDS(iscore_ll_ttest, file = file.path(params$output_dir, 'cytokine_receptor_celltype_iscore_ll_ttest.rds'))
+```
+
+```{r lrdb-mouse-site-ct-load}
+iscore_df <- readRDS(file.path(params$output_dir, 'cytokine_receptor_celltype_iscore.rds')) %>% 
+  mutate(site = factor(site, site_caps_ord))
+iscore_ll_ttest <- readRDS(file.path(params$output_dir, 'cytokine_receptor_celltype_iscore_ll_ttest.rds'))
+```
+
+
+### Table of results
+
+#### Interaction score
+```{r lrdb-mouse-site-ct-table}
+iscore_df %>% 
+  datatable(., 
+            rownames = FALSE, 
+            filter = 'top', 
+            caption = 'Cytokine-receptor interaction score by TME cell type, mouse and sites',
+            extensions = 'Buttons', 
+            options = list(
+              dom = 'Blfrtip',
+              buttons = c('csv', 'excel')
+              )) %>% 
+  formatSignif(c('p.value')) %>% 
+  formatRound(c('iscore'))
+```
+
+
+#### T-test stats
+```{r lrdb-mouse-site-ct-ll-ttest-table}
+iscore_ll_ttest %>% 
+  mutate(
+    logFC = round(logFC, 2) %>% as.character()
+  ) %>% 
+  datatable(., 
+            rownames = FALSE, 
+            filter = 'top', 
+            caption = 'One-sided T-test between lung and liver. LogFC representes the ratio of average score in lung over liver',
+            extensions = 'Buttons', 
+            options = list(
+              dom = 'Blfrtip',
+              buttons = c('csv', 'excel')
+              )) %>% 
+  formatSignif(c('p', 'm_liver', 'm_lung')) %>% 
+  formatRound(c('t'))
+```
+
+
+### Dotplot
+
+Showing interactions with an interaction score P value < 0.05 in at least one replicate and different score between Liver and Lung (T-test two-sided P value < 0.05)
+```{r lrdb-mouse-site-ct-dotplot-conf, fig.width=5.2}
+# n_top <- 20
+
+use_data <- iscore_df %>% 
+  mutate(
+     lr_cell_type = paste(lr, cell_type, sep = '-')
+  )
+
+# # Select top interactions based on sum of scores in all sites/replicates
+# lr_top <- use_data %>% 
+#   group_by(lr, cell_type) %>% 
+#   summarise(sum = sum(iscore)) %>% 
+#   arrange(desc(sum)) %>% 
+#   head(n_top) %>% 
+  # pull(lr)
+
+# lr_p05 <- use_data %>%
+#   filter(p.value <= 0.05) %>%
+#   pull(lr) %>%
+#   unique
+
+# Select interactions with a P < 0.05 in at least one replicate
+lr_p05 <- use_data %>%
+  filter(p.value <= 0.05) %>%
+  pull(lr_cell_type) %>%
+  unique
+
+# Select interactions based on T-test P < 0.05 AND at least one replicate with P < 0.05
+lr_sel <- iscore_ll_ttest %>%
+  filter(p <= 0.05) %>% 
+  mutate(
+    # max_iscore = ifelse(logFC < 0, m_liver, m_lung),
+    lr_cell_type = paste(lr, cell_type, sep = '-')
+  ) %>% 
+  filter(lr_cell_type %in% lr_p05) %>% 
+  pull(lr_cell_type)
+
+# Generate matrix of iscore to cluster lr pairs
+use_mat <- use_data %>% 
+  dplyr::select(lr_cell_type, iscore, ct_site_mouse) %>% 
+  pivot_wider(names_from = ct_site_mouse, values_from = iscore) %>% 
+  column_to_rownames('lr_cell_type')
+use_mat[is.na(use_mat)] <- 0
+use_mat <- use_mat[lr_sel,]
+
+row_hclust <- hclust(dist(use_mat))
+row_hclust_labels <- row_hclust$labels[row_hclust$order]
+
+# Generate plot
+use_data_top <- use_data %>% 
+  filter(lr_cell_type %in% row_hclust_labels) %>% 
+  mutate(lr_cell_type = factor(lr_cell_type, levels = row_hclust_labels))
+
+plot_iscore <- use_data_top %>% 
+  ggplot(aes(mouse_id, lr, size = iscore, color = -log10(p.value))) +
+    geom_point() +
+    # geom_point(data = use_data_top %>% filter(p.value <= 0.05), pch = 21, color = 'black', stroke = 1) +
+    # geom_point(data = use_data_top %>% filter(p.value > 0.05), pch = 21, color = 'grey70', stroke = 1, show.legend = FALSE) +
+    # scale_color_distiller(palette = "Reds", na.value = "grey70", direction = 1) +
+    # scale_color_viridis_c(na.value = "grey70") +
+    # scale_colour_gradient2(midpoint = -log10(0.05), low = 'grey90', mid = 'grey90', high = 'firebrick')+
+    scale_color_distiller(palette = "Purples", na.value = "grey70", direction = 1) +
+    facet_grid(cell_type~site, scales = 'free', space = 'free') +
+    labs(
+      y = '', 
+      x = 'Mouse replicate',
+      size = 'Interaction\nscore',
+      color = '-log10(P value)',
+      # caption = paste('Showing top', n_top, 'L-R interactions pairs based total score')
+      ) +
+    theme(
+      panel.border = element_rect(color = "black", fill = NA, linewidth = 1),
+      # axis.text.x=element_blank(),
+      axis.ticks.x=element_blank(),
+      axis.line = element_blank(),
+      panel.grid.major.y = element_line(linewidth = 0.2, colour="grey60", linetype = 'dashed'),
+      # panel.grid.major.x = element_line(linewidth = 0.2, colour="grey60", linetype = 'dashed'),
+      strip.background = element_blank()#,
+      # strip.text.y = element_blank()
+      )
+
+# Generate plot for selected interactions
+use_data_top_sel <- use_data_top %>% 
+  filter(lr %in% selected_interacting_pair)
+
+plot_iscore_selected <- use_data_top_sel %>% 
+  ggplot(aes(mouse_id, lr, size = iscore, color = -log10(p.value))) +
+    geom_point() +
+    # geom_point(data = use_data_top %>% filter(p.value <= 0.05), pch = 21, color = 'black', stroke = 1) +
+    # geom_point(data = use_data_top %>% filter(p.value > 0.05), pch = 21, color = 'grey70', stroke = 1, show.legend = FALSE) +
+    # scale_color_distiller(palette = "Reds", na.value = "grey70", direction = 1) +
+    # scale_color_viridis_c(na.value = "grey70") +
+    # scale_colour_gradient2(midpoint = -log10(0.05), low = 'grey90', mid = 'grey90', high = 'firebrick')+
+    scale_color_distiller(palette = "Purples", na.value = "grey70", direction = 1) +
+    facet_grid(cell_type~site, scales = 'free', space = 'free') +
+    labs(
+      y = '', 
+      x = 'Mouse replicate',
+      size = 'Interaction\nscore',
+      color = '-log10(P value)',
+      # caption = paste('Showing top', n_top, 'L-R interactions pairs based total score')
+      ) +
+    theme(
+      panel.border = element_rect(color = "black", fill = NA, linewidth = 1),
+      # axis.text.x=element_blank(),
+      axis.ticks.x=element_blank(),
+      axis.line = element_blank(),
+      panel.grid.major.y = element_line(linewidth = 0.2, colour="grey60", linetype = 'dashed'),
+      # panel.grid.major.x = element_line(linewidth = 0.2, colour="grey60", linetype = 'dashed'),
+      strip.background = element_blank()#,
+      # strip.text.y = element_blank()
+      )
+```
+
+#### Simple
+```{r lrdb-mouse-site-ct-dotplot-simple, fig.width=5.2, fig.asp= 0.6}
+print(plot_iscore)
+```
+
+#### Additional T-test panel
+```{r lrdb-mouse-site-ct-dotplot-pval, fig.width=5.2, fig.asp= 0.6}
+plot_iscore_legend <- cowplot::get_legend(plot_iscore)
+
+plot_p <- iscore_ll_ttest %>% 
+  mutate( lr_cell_type = paste(lr, cell_type, sep = '-')) %>% 
+  filter(lr_cell_type %in% use_data_top$lr_cell_type) %>% 
+  mutate(lr_cell_type = factor(lr, levels = levels(use_data_top$lr_cell_type))) %>% 
+  ggplot(aes(x=-log10(p), y = lr)) +
+  geom_col(fill = 'grey70') +
+  scale_x_continuous(expand = c(0, 0)) +
+  facet_grid(cell_type~., scales = 'free', space = 'free') +
+  theme(
+    axis.text.y = element_blank(),
+    axis.ticks.y = element_blank(),
+    axis.line.y = element_blank(),
+    strip.background = element_blank()
+  ) +
+  labs(
+    y = NULL,
+    x = bquote("-log"[10] ~ .(paste0("(P-value)")))
+  )
+
+plot_grid(
+  plot_iscore + guides(color = "none", size = "none") + theme(strip.text.y = element_blank()), 
+  plot_p, 
+  plot_iscore_legend,
+  align = "h", 
+  axis= "tb",
+  nrow = 1, 
+  rel_widths = c(1, 0.3, 0.2))
+
+```
+
+#### Selectd Interactions - Simple
+```{r lrdb-mouse-site-ct-dotplot-simple-sel, fig.width=5.2, fig.asp= 0.3}
+print(plot_iscore_selected)
+```
+
+#### Selectd Interactions - Additional T-test panel
+```{r lrdb-mouse-site-ct-dotplot-pval-sel, fig.width=5.2, fig.asp= 0.3}
+plot_iscore_legend <- cowplot::get_legend(plot_iscore_selected)
+
+plot_p <- iscore_ll_ttest %>% 
+  mutate( lr_cell_type = paste(lr, cell_type, sep = '-')) %>% 
+  filter(lr_cell_type %in% use_data_top_sel$lr_cell_type) %>% 
+  mutate(lr_cell_type = factor(lr, levels = levels(use_data_top_sel$lr_cell_type))) %>% 
+  ggplot(aes(x=-log10(p), y = lr)) +
+  geom_col(fill = 'grey70') +
+  scale_x_continuous(expand = c(0, 0)) +
+  facet_grid(cell_type~., scales = 'free', space = 'free') +
+  theme(
+    axis.text.y = element_blank(),
+    axis.ticks.y = element_blank(),
+    axis.line.y = element_blank(),
+    strip.background = element_blank()
+  ) +
+  labs(
+    y = NULL,
+    x = bquote("-log"[10] ~ .(paste0("(P-value)")))
+  )
+
+plot_grid(
+  plot_iscore_selected + guides(color = "none", size = "none") + theme(strip.text.y = element_blank()), 
+  plot_p, 
+  plot_iscore_legend,
+  align = "h", 
+  axis= "tb",
+  nrow = 1, 
+  rel_widths = c(1, 0.3, 0.2))
+
+```
+
+
+
+### Dotplot iscore-color
+
+Showing interactions with an interaction score P value < 0.05 in at least one replicate and different score between Liver and Lung (T-test two-sided P value < 0.05)
+```{r lrdb-mouse-site-ct-dotplot-2-conf, fig.width=5.2}
+# n_top <- 20
+
+use_data <- iscore_df %>% 
+  mutate(
+     lr_cell_type = paste(lr, cell_type, sep = '-')
+  )
+
+# # Select top interactions based on sum of scores in all sites/replicates
+# lr_top <- use_data %>% 
+#   group_by(lr, cell_type) %>% 
+#   summarise(sum = sum(iscore)) %>% 
+#   arrange(desc(sum)) %>% 
+#   head(n_top) %>% 
+  # pull(lr)
+
+# lr_p05 <- use_data %>%
+#   filter(p.value <= 0.05) %>%
+#   pull(lr) %>%
+#   unique
+
+# Select interactions with a P < 0.05 in at least one replicate
+lr_p05 <- use_data %>%
+  filter(p.value <= 0.05) %>%
+  pull(lr_cell_type) %>%
+  unique
+
+# Select interactions based on T-test P < 0.05 AND at least one replicate with P < 0.05
+lr_sel <- iscore_ll_ttest %>%
+  filter(p <= 0.05) %>% 
+  mutate(
+    # max_iscore = ifelse(logFC < 0, m_liver, m_lung),
+    lr_cell_type = paste(lr, cell_type, sep = '-')
+  ) %>% 
+  filter(lr_cell_type %in% lr_p05) %>% 
+  pull(lr_cell_type)
+
+# Generate matrix of iscore to cluster lr pairs
+use_mat <- use_data %>% 
+  dplyr::select(lr_cell_type, iscore, ct_site_mouse) %>% 
+  pivot_wider(names_from = ct_site_mouse, values_from = iscore) %>% 
+  column_to_rownames('lr_cell_type')
+use_mat[is.na(use_mat)] <- 0
+use_mat <- use_mat[lr_sel,]
+
+row_hclust <- hclust(dist(use_mat))
+row_hclust_labels <- row_hclust$labels[row_hclust$order]
+
+# Generate plot
+use_data_top <- use_data %>% 
+  filter(lr_cell_type %in% row_hclust_labels) %>% 
+  mutate(lr_cell_type = factor(lr_cell_type, levels = row_hclust_labels))
+
+plot_iscore <- use_data_top %>% 
+  # ggplot(aes(mouse_id, lr, size = iscore, color = -log10(p.value))) +
+  ggplot(aes(mouse_id, lr, size = -log10(p.value), color = iscore)) +
+    geom_point() +
+    # geom_point(data = use_data_top %>% filter(p.value <= 0.05), pch = 21, color = 'black', stroke = 1) +
+    # geom_point(data = use_data_top %>% filter(p.value > 0.05), pch = 21, color = 'grey70', stroke = 1, show.legend = FALSE) +
+    # scale_color_distiller(palette = "Reds", na.value = "grey70", direction = 1) +
+    # scale_color_viridis_c(na.value = "grey70") +
+    # scale_colour_gradient2(midpoint = -log10(0.05), low = 'grey90', mid = 'grey90', high = 'firebrick')+
+    scale_color_distiller(palette = "Purples", na.value = "grey70", direction = 1) +
+    # scale_color_viridis_log10scaled +
+    facet_grid(cell_type~site, scales = 'free', space = 'free') +
+    labs(
+      y = '', 
+      x = 'Mouse replicate',
+      color = 'Interaction\nscore',
+      size = bquote("-log"[10] ~ .(paste0("(P-value)")))
+      # caption = paste('Showing top', n_top, 'L-R interactions pairs based total score')
+      ) +
+    theme(
+      panel.border = element_rect(color = "black", fill = NA, linewidth = 1),
+      # axis.text.x=element_blank(),
+      axis.ticks.x=element_blank(),
+      axis.line = element_blank(),
+      panel.grid.major.y = element_line(linewidth = 0.2, colour="grey60", linetype = 'dashed'),
+      # panel.grid.major.x = element_line(linewidth = 0.2, colour="grey60", linetype = 'dashed'),
+      strip.background = element_blank()#,
+      # strip.text.y = element_blank()
+      )
+
+# Generate plot for selected interactions
+use_data_top_sel <- use_data_top %>% 
+  filter(lr %in% selected_interacting_pair)
+
+plot_iscore_selected <- use_data_top_sel %>% 
+  # ggplot(aes(mouse_id, lr, size = iscore, color = -log10(p.value))) +
+  ggplot(aes(mouse_id, lr, size = -log10(p.value), color = iscore)) +
+    geom_point() +
+    # geom_point(data = use_data_top %>% filter(p.value <= 0.05), pch = 21, color = 'black', stroke = 1) +
+    # geom_point(data = use_data_top %>% filter(p.value > 0.05), pch = 21, color = 'grey70', stroke = 1, show.legend = FALSE) +
+    # scale_color_distiller(palette = "Reds", na.value = "grey70", direction = 1) +
+    # scale_color_viridis_c(na.value = "grey70") +
+    # scale_colour_gradient2(midpoint = -log10(0.05), low = 'grey90', mid = 'grey90', high = 'firebrick')+
+    scale_color_distiller(palette = "Purples", na.value = "grey70", direction = 1) +
+    # scale_color_viridis_log10scaled +
+    facet_grid(cell_type~site, scales = 'free', space = 'free') +
+    labs(
+      y = '', 
+      x = 'Mouse replicate',
+      color = 'Interaction\nscore',
+      size = bquote("-log"[10] ~ .(paste0("(P-value)")))
+      # caption = paste('Showing top', n_top, 'L-R interactions pairs based total score')
+      ) +
+    theme(
+      panel.border = element_rect(color = "black", fill = NA, linewidth = 1),
+      # axis.text.x=element_blank(),
+      axis.ticks.x=element_blank(),
+      axis.line = element_blank(),
+      panel.grid.major.y = element_line(linewidth = 0.2, colour="grey60", linetype = 'dashed'),
+      # panel.grid.major.x = element_line(linewidth = 0.2, colour="grey60", linetype = 'dashed'),
+      strip.background = element_blank()#,
+      # strip.text.y = element_blank()
+      )
+
+
+```
+
+#### Simple
+```{r lrdb-mouse-site-ct-dotplot-2-simple, fig.width=5.2, fig.asp= 0.6}
+print(plot_iscore)
+```
+
+#### Additional T-test panel
+```{r lrdb-mouse-site-ct-dotplot-2-pval, fig.width=5.2, fig.asp= 0.6}
+plot_iscore_legend <- cowplot::get_legend(plot_iscore)
+
+plot_p <- iscore_ll_ttest %>% 
+  mutate( lr_cell_type = paste(lr, cell_type, sep = '-')) %>% 
+  filter(lr_cell_type %in% use_data_top$lr_cell_type) %>% 
+  mutate(lr_cell_type = factor(lr, levels = levels(use_data_top$lr_cell_type))) %>% 
+  ggplot(aes(x=-log10(p), y = lr)) +
+  geom_col(fill = 'grey70') +
+  scale_x_continuous(expand = c(0, 0)) +
+  facet_grid(cell_type~., scales = 'free', space = 'free') +
+  theme(
+    axis.text.y = element_blank(),
+    axis.ticks.y = element_blank(),
+    axis.line.y = element_blank(),
+    strip.background = element_blank()
+  ) +
+  labs(
+    y = NULL,
+    x = bquote("-log"[10] ~ .(paste0("(P-value)")))
+  )
+
+plot_grid(
+  plot_iscore + guides(color = "none", size = "none") + theme(strip.text.y = element_blank()), 
+  plot_p, 
+  plot_iscore_legend,
+  align = "h", 
+  axis= "tb",
+  nrow = 1, 
+  rel_widths = c(1, 0.3, 0.2))
+
+```
+
+
+#### Selected interactions - Simple
+```{r lrdb-mouse-site-ct-dotplot-2-simple-sel, fig.width=5.2, fig.asp= 0.3}
+print(plot_iscore_selected)
+```
+
+#### Selected interactions - Additional T-test panel
+```{r lrdb-mouse-site-ct-dotplot-2-pval-sel, fig.width=5.2, fig.asp= 0.3}
+plot_iscore_legend <- cowplot::get_legend(plot_iscore_selected)
+
+plot_p <- iscore_ll_ttest %>% 
+  mutate( lr_cell_type = paste(lr, cell_type, sep = '-')) %>% 
+  filter(lr_cell_type %in% use_data_top_sel$lr_cell_type) %>% 
+  mutate(lr_cell_type = factor(lr, levels = levels(use_data_top_sel$lr_cell_type))) %>% 
+  ggplot(aes(x=-log10(p), y = lr)) +
+  geom_col(fill = 'grey70') +
+  scale_x_continuous(expand = c(0, 0)) +
+  facet_grid(cell_type~., scales = 'free', space = 'free') +
+  theme(
+    axis.text.y = element_blank(),
+    axis.ticks.y = element_blank(),
+    axis.line.y = element_blank(),
+    strip.background = element_blank()
+  ) +
+  labs(
+    y = NULL,
+    x = bquote("-log"[10] ~ .(paste0("(P-value)")))
+  )
+
+plot_grid(
+  plot_iscore_selected + guides(color = "none", size = "none") + theme(strip.text.y = element_blank()), 
+  plot_p, 
+  plot_iscore_legend,
+  align = "h", 
+  axis= "tb",
+  nrow = 1, 
+  rel_widths = c(1, 0.3, 0.2))
+
+```
+
+
+
+
+### Dotplot iscore-color: no P filter
+
+Showing all selected interactions, without filgering by P value.
+```{r lrdb-mouse-site-ct-dotplot-all-conf, fig.width=5.2}
+# n_top <- 20
+
+use_data <- iscore_df %>% 
+  mutate(
+     lr_cell_type = paste(lr, cell_type, sep = '-')
+  )
+
+# # Select top interactions based on sum of scores in all sites/replicates
+# lr_top <- use_data %>% 
+#   group_by(lr, cell_type) %>% 
+#   summarise(sum = sum(iscore)) %>% 
+#   arrange(desc(sum)) %>% 
+#   head(n_top) %>% 
+  # pull(lr)
+
+# lr_p05 <- use_data %>%
+#   filter(p.value <= 0.05) %>%
+#   pull(lr) %>%
+#   unique
+
+# # Select interactions with a P < 0.05 in at least one replicate
+# lr_p05 <- use_data %>%
+#   filter(p.value <= 0.05) %>%
+#   pull(lr_cell_type) %>%
+#   unique
+
+# Select interactions based on T-test P < 0.05 AND at least one replicate with P < 0.05
+lr_sel <- iscore_ll_ttest %>%
+  # filter(p <= 0.05) %>% 
+  mutate(
+    # max_iscore = ifelse(logFC < 0, m_liver, m_lung),
+    lr_cell_type = paste(lr, cell_type, sep = '-')
+  ) %>% 
+  # filter(lr_cell_type %in% lr_p05) %>% 
+  pull(lr_cell_type)
+
+# Generate matrix of iscore to cluster lr pairs
+use_mat <- use_data %>% 
+  dplyr::select(lr_cell_type, iscore, ct_site_mouse) %>% 
+  pivot_wider(names_from = ct_site_mouse, values_from = iscore) %>% 
+  column_to_rownames('lr_cell_type')
+use_mat[is.na(use_mat)] <- 0
+use_mat <- use_mat[lr_sel,]
+
+row_hclust <- hclust(dist(use_mat))
+row_hclust_labels <- row_hclust$labels[row_hclust$order]
+
+# Generate plot
+use_data_top <- use_data %>% 
+  filter(lr_cell_type %in% row_hclust_labels) %>% 
+  mutate(lr_cell_type = factor(lr_cell_type, levels = row_hclust_labels))
+
+plot_iscore <- use_data_top %>% 
+  # ggplot(aes(mouse_id, lr, size = iscore, color = -log10(p.value))) +
+  ggplot(aes(mouse_id, lr, size = -log10(p.value), color = iscore)) +
+    geom_point() +
+    # geom_point(data = use_data_top %>% filter(p.value <= 0.05), pch = 21, color = 'black', stroke = 1) +
+    # geom_point(data = use_data_top %>% filter(p.value > 0.05), pch = 21, color = 'grey70', stroke = 1, show.legend = FALSE) +
+    # scale_color_distiller(palette = "Reds", na.value = "grey70", direction = 1) +
+    # scale_color_viridis_c(na.value = "grey70") +
+    # scale_colour_gradient2(midpoint = -log10(0.05), low = 'grey90', mid = 'grey90', high = 'firebrick')+
+    scale_color_distiller(palette = "Purples", na.value = "grey70", direction = 1) +
+    # scale_color_viridis_log10scaled +
+    facet_grid(cell_type~site, scales = 'free', space = 'free') +
+    labs(
+      y = '', 
+      x = 'Mouse replicate',
+      color = 'Interaction\nscore',
+      size = bquote("-log"[10] ~ .(paste0("(P-value)")))
+      # caption = paste('Showing top', n_top, 'L-R interactions pairs based total score')
+      ) +
+    theme(
+      panel.border = element_rect(color = "black", fill = NA, linewidth = 1),
+      # axis.text.x=element_blank(),
+      axis.ticks.x=element_blank(),
+      axis.line = element_blank(),
+      panel.grid.major.y = element_line(linewidth = 0.2, colour="grey60", linetype = 'dashed'),
+      # panel.grid.major.x = element_line(linewidth = 0.2, colour="grey60", linetype = 'dashed'),
+      strip.background = element_blank()#,
+      # strip.text.y = element_blank()
+      )
+
+# Generate plot for selected interactions
+use_data_top_sel <- use_data_top %>% 
+  filter(lr %in% selected_interacting_pair)
+
+plot_iscore_selected <- use_data_top_sel %>% 
+  # ggplot(aes(mouse_id, lr, size = iscore, color = -log10(p.value))) +
+  ggplot(aes(mouse_id, lr, size = -log10(p.value), color = iscore)) +
+    geom_point() +
+    # geom_point(data = use_data_top %>% filter(p.value <= 0.05), pch = 21, color = 'black', stroke = 1) +
+    # geom_point(data = use_data_top %>% filter(p.value > 0.05), pch = 21, color = 'grey70', stroke = 1, show.legend = FALSE) +
+    # scale_color_distiller(palette = "Reds", na.value = "grey70", direction = 1) +
+    # scale_color_viridis_c(na.value = "grey70") +
+    # scale_colour_gradient2(midpoint = -log10(0.05), low = 'grey90', mid = 'grey90', high = 'firebrick')+
+    scale_color_distiller(palette = "Purples", na.value = "grey70", direction = 1) +
+    # scale_color_viridis_log10scaled +
+    facet_grid(cell_type~site, scales = 'free', space = 'free') +
+    labs(
+      y = '', 
+      x = 'Mouse replicate',
+      color = 'Interaction\nscore',
+      size = bquote("-log"[10] ~ .(paste0("(P-value)")))
+      # caption = paste('Showing top', n_top, 'L-R interactions pairs based total score')
+      ) +
+    theme(
+      panel.border = element_rect(color = "black", fill = NA, linewidth = 1),
+      # axis.text.x=element_blank(),
+      axis.ticks.x=element_blank(),
+      axis.line = element_blank(),
+      panel.grid.major.y = element_line(linewidth = 0.2, colour="grey60", linetype = 'dashed'),
+      # panel.grid.major.x = element_line(linewidth = 0.2, colour="grey60", linetype = 'dashed'),
+      strip.background = element_blank()#,
+      # strip.text.y = element_blank()
+      )
+
+
+```
+
+#### Selected interactions - Simple
+```{r lrdb-mouse-site-ct-dotplot-all-simple-sel, fig.width=5.2, fig.asp= 0.6}
+print(plot_iscore_selected)
+```
+
+#### Selected interactions - Additional T-test panel
+```{r lrdb-mouse-site-ct-dotplot-all-pval-sel, fig.width=5.2, fig.asp= 0.6}
+plot_iscore_legend <- cowplot::get_legend(plot_iscore_selected)
+
+plot_p <- iscore_ll_ttest %>% 
+  mutate( lr_cell_type = paste(lr, cell_type, sep = '-')) %>% 
+  filter(lr_cell_type %in% use_data_top_sel$lr_cell_type) %>% 
+  mutate(lr_cell_type = factor(lr, levels = levels(use_data_top_sel$lr_cell_type))) %>% 
+  ggplot(aes(x=-log10(p), y = lr)) +
+  geom_col(fill = 'grey70') +
+  scale_x_continuous(expand = c(0, 0)) +
+  facet_grid(cell_type~., scales = 'free', space = 'free') +
+  theme(
+    axis.text.y = element_blank(),
+    axis.ticks.y = element_blank(),
+    axis.line.y = element_blank(),
+    strip.background = element_blank()
+  ) +
+  labs(
+    y = NULL,
+    x = bquote("-log"[10] ~ .(paste0("(P-value)")))
+  )
+
+plot_grid(
+  plot_iscore_selected + guides(color = "none", size = "none") + theme(strip.text.y = element_blank()), 
+  plot_p, 
+  plot_iscore_legend,
+  align = "h", 
+  axis= "tb",
+  nrow = 1, 
+  rel_widths = c(1, 0.3, 0.2))
+
+```
+
+
+
+
+### Dot plots all cell types
+```{r lrdb-mouse-site-all_ct-dotplot-conf}
+use_data <- iscore_df %>% 
+  group_by(lr, cell_type, site) %>% 
+  summarise(miscore = median(iscore))
+
+use_data_to_plot <- use_data %>%
+  mutate(site = gsub("_", "\n", site)) %>%
+  mutate(cell_type = gsub(" ", "\n", cell_type)) %>%
+  filter(lr %in% selected_interacting_pair) 
+
+# Add empty levels
+ipartner_levels <- unique(use_data_to_plot$cell_type)
+site_levels <- unique(iscore_df$site)
+
+new_data <- foreach(ipair = unique(use_data_to_plot$lr), .combine = rbind) %do% {
+  foreach(ipartner = ipartner_levels, .combine = rbind) %do% {
+    foreach(isite = site_levels, .combine = rbind) %do% {
+      fdata <- use_data_to_plot %>% 
+        filter(lr == ipair & cell_type == ipartner & isite == site)
+      if(nrow(fdata) == 0){
+        data.frame(lr = ipair, cell_type = ipartner, site = isite, miscore = 0)
+      } else {
+        fdata %>% data.frame
+      }
+    }
+  }
+}
+
+use_data_to_plot <- new_data
+
+```
+
+```{r lrdb-mouse-site-all_ct-dotplot, fig.width=10.2, fig.asp= 0.2}
+use_data_to_plot %>% 
+  ggplot(aes(cell_type, site, size = miscore, color = miscore)) +
+  geom_point() +
+  scale_color_distiller(palette = "Purples", na.value = "grey70", direction = 1) +
+  # scale_color_viridis_log10scaled +
+  facet_wrap(lr~., nrow = 1) +
+  theme(
+    axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1),
+    axis.ticks.y=element_blank(),
+    panel.border = element_rect(colour = "black", size=0.5),
+    panel.grid.major.x = element_line(linewidth = 0.2, colour="grey60", linetype = 'dashed'),
+    strip.background = element_blank()
+  ) +
+  labs(
+    x = NULL,
+    y = '',
+    color = 'Median\nscore', 
+    size = 'Median\nscore',
+    caption = 'Showing median score across replicates'
+  )
+```
+
+
+## Cytokine-receptor interaction by TME clusters
+```{r lrdb-mouse-site-cl, eval = FALSE}
+# Calculate stats
+cell_type_var <- "cluster_mnn"
+use_mouse <- "mouse_3"
+use_site <- "bone"
+cell_type <- "1"
+
+iscore_df <- foreach(use_mouse = sce_cancer$mouse_id %>% unique, .combine = rbind) %do% {
+  # cat(use_mouse)
+  # Select shared sites in cancer and tme sets
+  cancer_sites <- colData(sce_cancer) %>% data.frame %>% filter(mouse_id == use_mouse) %>% collect %>% .[['site']] %>% unique
+  tme_sites <- colData(sce_tme) %>% data.frame %>% filter(mouse_id == use_mouse) %>% collect %>% .[['site']] %>% unique
+  use_sites <- intersect(cancer_sites, tme_sites)
+  
+  use_site <- use_sites[1]
+  foreach(use_site = use_sites, .combine = rbind) %do% {
+    # cat(use_mouse, use_site, "\n")
+    # Subset of cancer cells
+    use_cols <-  sce_cancer$site == use_site & sce_cancer$mouse_id == use_mouse
+    use_rows <- rownames(sce_cancer) %in% genes_receptors
+    use_sce_cancer <- sce_cancer[use_rows, use_cols]
+    
+    # Subset of tme cells
+    use_cols <-  sce_tme$site == use_site & sce_tme$mouse_id == use_mouse
+    cell_type_counts <- colData(sce_tme[,use_cols])[,cell_type_var] %>% table
+    tme_cell_types <- cell_type_counts[cell_type_counts > 20] %>% names
+    if(length(tme_cell_types) > 0) {
+      foreach(cell_type = tme_cell_types, .combine = rbind) %do% {
+        
+        # cat(use_mouse,use_site, cell_type, "\n")
+        use_cols <-  sce_tme$site == use_site & sce_tme$mouse_id == use_mouse & colData(sce_tme)[,cell_type_var] == cell_type
+        use_cols[is.na(use_cols)] <- FALSE
+        use_rows <- rownames(sce_tme) %in% genes_ligands
+        use_sce_tme <- sce_tme[use_rows, use_cols]
+     
+        # Subset of database with ligands and receptors in the corresponding sce
+        use_db <- LRdbmm_cytokines %>% 
+          dplyr::filter((mm_ligand %in% rownames(use_sce_tme)) & (mm_receptor %in% rownames(use_sce_cancer))) %>% 
+          dplyr::select(mm_ligand, mm_receptor) %>% 
+          unique
+        
+        # Select ligand-receptor matrix
+        mat_ligand <- logcounts(use_sce_tme)[use_db$mm_ligand,]
+        mat_receptor <-  logcounts(use_sce_cancer)[use_db$mm_receptor,]
+        
+        # Filter ligands and receptors that are not expressed (Above 0 in >2% of cancer samples and >20% of tme cell type cells)
+        prop_ligand <- rowSums(mat_ligand > 0) / ncol(mat_ligand)
+        prop_receptor <- rowSums(mat_receptor > 0) / ncol(mat_receptor)
+        use_rows <- prop_ligand > 0.20 & prop_receptor > 0.02
+        
+        if(sum(use_rows) > 1) {
+          # Calculate iscore:  the product of average receptor expression across all cells of cell type A and the average ligand expression across all cells of cell type B. 
+          avg_ligand <- mat_ligand[use_rows,] %>% rowMeans
+          avg_receptor <-  mat_receptor[use_rows,] %>% rowMeans
+          iscore <-  (avg_ligand*avg_receptor) %>% set_names(paste(names(avg_ligand), names(avg_receptor), sep = '-'))
+          iscore_p.val <- iscore.permutation.test(avg_ligand, avg_receptor, 1000)
+      
+          data.frame(
+            lr = names(iscore), 
+            site = use_site, 
+            cell_type = cell_type, 
+            mouse_id = use_mouse, 
+            iscore, 
+            p.value = iscore_p.val)
+        }
+      }
+    }
+  }
+
+}
+
+# Add additional variables 
+iscore_df <- iscore_df %>% 
+  mutate(
+    mouse_id =  gsub('mouse_', '', mouse_id),
+    site_mouse = paste(site, mouse_id, sep = '_'),
+    ct_site_mouse = paste(cell_type, site, mouse_id, sep = '_'),
+    ct_lr = paste(cell_type, lr, sep = '_')
+  )
+
+# Add normalized scores by lr and cluster
+iscore_df <- foreach(i = unique(iscore_df$ct_lr), .combine = rbind) %do% {
+  iscore_df %>%
+    filter(ct_lr == i) %>%
+    mutate(iscore_norm = normalize01(iscore))
+}
+
+# In order to be able to compare iscore in cell types not identifyed in one of the
+# sites (for example, endothelial cells in Lung), I add 0 to the data.
+i <- 'Spp1-Cd44'
+j <- '1'
+iscore_ll_ttest <- foreach(i = unique(iscore_df$lr), .combine = rbind) %do% {
+  x_i <- iscore_df %>% filter(site %in% c('Lung', 'Liver')) %>% filter(lr == i)
+  foreach(j = unique(x_i$cell_type), .combine = rbind) %do% {
+    x_j <- x_i %>% filter(cell_type == j)
+    iscore_liver <- x_i %>% filter(cell_type == j & site == 'Liver') %>% pull(iscore)
+    iscore_lung <- x_i %>% filter(cell_type == j & site == 'Lung') %>% pull(iscore)
+    
+    if(length(iscore_liver) < 3)
+      iscore_liver <- c(iscore_liver, rep(0, 3-length(iscore_liver)))
+    if(length(iscore_lung) < 3)
+      iscore_lung <- c(iscore_lung, rep(0, 3-length(iscore_lung)))
+    
+    x_fc <- log2(mean(iscore_lung)/mean(iscore_liver))
+  
+    if(length(x_fc) >0 & !is.na(x_fc)) {
+      if(x_fc < 0)
+        t.res <-try(t.test(iscore_liver, iscore_lung, alternative = 'greater'), silent = TRUE)
+      if(x_fc > 0)
+        t.res <-try(t.test(iscore_liver, iscore_lung, alternative = 'less'), silent = TRUE)
+      data.frame(cell_type = j, lr = i, p=t.res$p.value, 
+                 m_liver = t.res$estimate['mean of x'], 
+                 m_lung = t.res$estimate['mean of y'], 
+                 t = t.res$statistic, logFC = x_fc)
+    } else {
+      data.frame(cell_type = j,lr = i, p=NA, m_liver = NA, m_lung = NA, t=NA, logFC=NA)
+    }
+  }
+}
+
+iscore_df %<>%  dplyr::rename(cluster = cell_type)
+iscore_ll_ttest %<>%  dplyr::rename(cluster = cell_type)
+saveRDS(iscore_df, file = file.path(params$output_dir, 'cytokine_receptor_cluster_iscore.rds'))
+saveRDS(iscore_ll_ttest, file = file.path(params$output_dir, 'cytokine_receptor_cluster_iscore_ll_ttest.rds'))
+```
+
+```{r lrdb-mouse-site-cl-load}
+iscore_df <- readRDS(file.path(params$output_dir, 'cytokine_receptor_cluster_iscore.rds')) %>% 
+  mutate(site = factor(site, site_caps_ord))
+iscore_ll_ttest <- readRDS(file.path(params$output_dir, 'cytokine_receptor_cluster_iscore_ll_ttest.rds'))
+```
+
+### Table of results
+
+#### Interaction score
+```{r lrdb-mouse-site-cl-table}
+iscore_df %>% 
+  datatable(., 
+            rownames = FALSE, 
+            filter = 'top', 
+            caption = 'Cytokine-receptor interaction score by TME cluster, mouse and sites',
+            extensions = 'Buttons', 
+            options = list(
+              dom = 'Blfrtip',
+              buttons = c('csv', 'excel')
+              )) %>% 
+  formatSignif(c('p.value')) %>% 
+  formatRound(c('iscore'))
+```
+
+
+#### T-test stats
+```{r lrdb-mouse-site-cl-ll-ttest-table}
+iscore_ll_ttest %>% 
+  mutate(
+    logFC = round(logFC, 2) %>% as.character()
+  ) %>% 
+  datatable(., 
+            rownames = FALSE, 
+            filter = 'top', 
+            caption = 'One-sided T-test between lung and liver. LogFC representes the ratio of average score in lung over liver',
+            extensions = 'Buttons', 
+            options = list(
+              dom = 'Blfrtip',
+              buttons = c('csv', 'excel')
+              )) %>% 
+  formatSignif(c('p', 'm_liver', 'm_lung')) %>% 
+  formatRound(c('t'))
+```
+
+
+### Dotplot
+
+Showing interactions with an interaction score P value < 0.05 in at least one replicate and different score between Liver and Lung (T-test two-sided P value < 0.05)
+```{r lrdb-mouse-site-cl-dotplot-conf, fig.width=5.2}
+# n_top <- 20
+
+use_data <- iscore_df %>% 
+  mutate(
+     lr_cluster = paste(lr, cluster, sep = '-')
+  )
+
+# # Select top interactions based on sum of scores in all sites/replicates
+# lr_top <- use_data %>% 
+#   group_by(lr, cluster) %>% 
+#   summarise(sum = sum(iscore)) %>% 
+#   arrange(desc(sum)) %>% 
+#   head(n_top) %>% 
+  # pull(lr)
+
+# lr_p05 <- use_data %>%
+#   filter(p.value <= 0.05) %>%
+#   pull(lr) %>%
+#   unique
+
+# Select interactions with a P < 0.05 in at least one replicate
+lr_p05 <- use_data %>%
+  filter(p.value <= 0.05) %>%
+  pull(lr_cluster) %>%
+  unique
+
+# Select interactions based on T-test P < 0.05 AND at least one replicate with P < 0.05
+lr_sel <- iscore_ll_ttest %>%
+  filter(p <= 0.05) %>% 
+  mutate(
+    # max_iscore = ifelse(logFC < 0, m_liver, m_lung),
+    lr_cluster = paste(lr, cluster, sep = '-')
+  ) %>% 
+  filter(lr_cluster %in% lr_p05) %>% 
+  pull(lr_cluster)
+
+# Generate matrix of iscore to cluster lr pairs
+use_mat <- use_data %>% 
+  dplyr::select(lr_cluster, iscore, ct_site_mouse) %>% 
+  pivot_wider(names_from = ct_site_mouse, values_from = iscore) %>% 
+  column_to_rownames('lr_cluster')
+use_mat[is.na(use_mat)] <- 0
+use_mat <- use_mat[lr_sel,]
+
+row_hclust <- hclust(dist(use_mat))
+row_hclust_labels <- row_hclust$labels[row_hclust$order]
+
+# Generate plot
+use_data_top <- use_data %>% 
+  filter(lr_cluster %in% row_hclust_labels) %>% 
+  mutate(lr_cluster = factor(lr_cluster, levels = row_hclust_labels))
+
+plot_iscore <- use_data_top %>% 
+  ggplot(aes(mouse_id, lr, size = iscore, color = -log10(p.value))) +
+    geom_point() +
+    # geom_point(data = use_data_top %>% filter(p.value <= 0.05), pch = 21, color = 'black', stroke = 1) +
+    # geom_point(data = use_data_top %>% filter(p.value > 0.05), pch = 21, color = 'grey70', stroke = 1, show.legend = FALSE) +
+    # scale_color_distiller(palette = "Reds", na.value = "grey70", direction = 1) +
+    # scale_color_viridis_c(na.value = "grey70") +
+    # scale_colour_gradient2(midpoint = -log10(0.05), low = 'grey90', mid = 'grey90', high = 'firebrick')+
+    scale_color_distiller(palette = "Purples", na.value = "grey70", direction = 1) +
+    facet_grid(cluster~site, scales = 'free', space = 'free') +
+    labs(
+      y = '', 
+      x = 'Mouse replicate',
+      size = 'Interaction\nscore',
+      color = '-log10(P value)',
+      # caption = paste('Showing top', n_top, 'L-R interactions pairs based total score')
+      ) +
+    theme(
+      panel.border = element_rect(color = "black", fill = NA, linewidth = 1),
+      # axis.text.x=element_blank(),
+      axis.ticks.x=element_blank(),
+      axis.line.x = element_blank(),
+      panel.grid.major.y = element_line(linewidth = 0.2, colour="grey60", linetype = 'dashed'),
+      # panel.grid.major.x = element_line(linewidth = 0.2, colour="grey60", linetype = 'dashed'),
+      strip.background = element_blank()#,
+      # strip.text.y = element_blank()
+      )
+
+```
+
+#### Simple
+```{r lrdb-mouse-site-cl-dotplot-simple, fig.width=5.2, fig.asp= 0.6}
+print(plot_iscore)
+```
+
+#### Additional T-test panel
+```{r lrdb-mouse-site-cl-dotplot-pval, fig.width=5.2, fig.asp= 0.6}
+plot_iscore_legend <- cowplot::get_legend(plot_iscore)
+
+plot_p <- iscore_ll_ttest %>% 
+  mutate( lr_cluster = paste(lr, cluster, sep = '-')) %>% 
+  filter(lr_cluster %in% use_data_top$lr_cluster) %>% 
+  mutate(lr_cluster = factor(lr, levels = levels(use_data_top$lr_cluster))) %>% 
+  ggplot(aes(x=-log10(p), y = lr)) +
+  geom_col(fill = 'grey70') +
+  scale_x_continuous(expand = c(0, 0)) +
+  facet_grid(cluster~., scales = 'free', space = 'free') +
+  theme(
+    axis.text.y = element_blank(),
+    axis.ticks.y = element_blank(),
+    axis.line.y = element_blank(),
+    strip.background = element_blank()
+  ) +
+  labs(
+    y = NULL,
+    x = bquote("-log"[10] ~ .(paste0("(P-value)")))
+  )
+
+plot_grid(
+  plot_iscore + guides(color = "none", size = "none") + theme(strip.text.y = element_blank()), 
+  plot_p, 
+  plot_iscore_legend,
+  align = "h", 
+  axis= "tb",
+  nrow = 1, 
+  rel_widths = c(1, 0.3, 0.2))
+
+```
+
+
+### Dotplot iscore-color
+
+Showing interactions with an interaction score P value < 0.05 in at least one replicate and different score between Liver and Lung (T-test two-sided P value < 0.05)
+```{r lrdb-mouse-site-cl-dotplot-2-conf, fig.width=5.2}
+# n_top <- 20
+
+use_data <- iscore_df %>% 
+  mutate(
+     lr_cluster = paste(lr, cluster, sep = '-')
+  )
+
+# # Select top interactions based on sum of scores in all sites/replicates
+# lr_top <- use_data %>% 
+#   group_by(lr, cluster) %>% 
+#   summarise(sum = sum(iscore)) %>% 
+#   arrange(desc(sum)) %>% 
+#   head(n_top) %>% 
+  # pull(lr)
+
+# lr_p05 <- use_data %>%
+#   filter(p.value <= 0.05) %>%
+#   pull(lr) %>%
+#   unique
+
+# Select interactions with a P < 0.05 in at least one replicate
+lr_p05 <- use_data %>%
+  filter(p.value <= 0.05) %>%
+  pull(lr_cluster) %>%
+  unique
+
+# Select interactions based on T-test P < 0.05 AND at least one replicate with P < 0.05
+lr_sel <- iscore_ll_ttest %>%
+  filter(p <= 0.05) %>% 
+  mutate(
+    # max_iscore = ifelse(logFC < 0, m_liver, m_lung),
+    lr_cluster = paste(lr, cluster, sep = '-')
+  ) %>% 
+  filter(lr_cluster %in% lr_p05) %>% 
+  pull(lr_cluster)
+
+# Generate matrix of iscore to cluster lr pairs
+use_mat <- use_data %>% 
+  dplyr::select(lr_cluster, iscore, ct_site_mouse) %>% 
+  pivot_wider(names_from = ct_site_mouse, values_from = iscore) %>% 
+  column_to_rownames('lr_cluster')
+use_mat[is.na(use_mat)] <- 0
+use_mat <- use_mat[lr_sel,]
+
+row_hclust <- hclust(dist(use_mat))
+row_hclust_labels <- row_hclust$labels[row_hclust$order]
+
+# Generate plot
+use_data_top <- use_data %>% 
+  filter(lr_cluster %in% row_hclust_labels) %>% 
+  mutate(lr_cluster = factor(lr_cluster, levels = row_hclust_labels))
+
+plot_iscore <- use_data_top %>% 
+  # ggplot(aes(mouse_id, lr, size = iscore, color = -log10(p.value))) +
+  ggplot(aes(mouse_id, lr, size = -log10(p.value), color = iscore)) +
+    geom_point() +
+    # geom_point(data = use_data_top %>% filter(p.value <= 0.05), pch = 21, color = 'black', stroke = 1) +
+    # geom_point(data = use_data_top %>% filter(p.value > 0.05), pch = 21, color = 'grey70', stroke = 1, show.legend = FALSE) +
+    # scale_color_distiller(palette = "Reds", na.value = "grey70", direction = 1) +
+    # scale_color_viridis_c(na.value = "grey70") +
+    # scale_colour_gradient2(midpoint = -log10(0.05), low = 'grey90', mid = 'grey90', high = 'firebrick')+
+    scale_color_distiller(palette = "Purples", na.value = "grey70", direction = 1) +
+    # scale_color_viridis_log10scaled +
+    facet_grid(cluster~site, scales = 'free', space = 'free') +
+    labs(
+      y = '', 
+      x = 'Mouse replicate',
+      color = 'Interaction\nscore',
+      size = bquote("-log"[10] ~ .(paste0("(P-value)")))
+      # caption = paste('Showing top', n_top, 'L-R interactions pairs based total score')
+      ) +
+    theme(
+      panel.border = element_rect(color = "black", fill = NA, linewidth = 1),
+      # axis.text.x=element_blank(),
+      axis.ticks.x=element_blank(),
+      axis.line = element_blank(),
+      panel.grid.major.y = element_line(linewidth = 0.2, colour="grey60", linetype = 'dashed'),
+      # panel.grid.major.x = element_line(linewidth = 0.2, colour="grey60", linetype = 'dashed'),
+      strip.background = element_blank()#,
+      # strip.text.y = element_blank()
+      )
+```
+
+#### Simple
+```{r lrdb-mouse-site-cl-dotplot-2-simple, fig.width=5.2, fig.asp= 0.6}
+print(plot_iscore)
+```
+
+#### Additional T-test panel
+```{r lrdb-mouse-site-cl-dotplot-2-pval, fig.width=5.2, fig.asp= 0.6}
+plot_iscore_legend <- cowplot::get_legend(plot_iscore)
+
+plot_p <- iscore_ll_ttest %>% 
+  mutate( lr_cluster = paste(lr, cluster, sep = '-')) %>% 
+  filter(lr_cluster %in% use_data_top$lr_cluster) %>% 
+  mutate(lr_cluster = factor(lr, levels = levels(use_data_top$lr_cluster))) %>% 
+  ggplot(aes(x=-log10(p), y = lr)) +
+  geom_col(fill = 'grey70') +
+  scale_x_continuous(expand = c(0, 0)) +
+  facet_grid(cluster~., scales = 'free', space = 'free') +
+  theme(
+    axis.text.y = element_blank(),
+    axis.ticks.y = element_blank(),
+    axis.line.y = element_blank(),
+    strip.background = element_blank()
+  ) +
+  labs(
+    y = NULL,
+    x = bquote("-log"[10] ~ .(paste0("(P-value)")))
+  )
+
+plot_grid(
+  plot_iscore + guides(color = "none", size = "none") + theme(strip.text.y = element_blank()), 
+  plot_p, 
+  plot_iscore_legend,
+  align = "h", 
+  axis= "tb",
+  nrow = 1, 
+  rel_widths = c(1, 0.3, 0.2))
+
+```
+
+
+
+
+
+
+
+
+
+
+## TME-Cluster specific cytokines
+
+Here we first select cytokines that show specific expression to some clusters.
+
+### Cytokines selection
+```{r cluster-tme-marker-genes-conf}
+score_markers <- readRDS(file.path('./output/p26532_o28268/p26532_o28268-10x_rnaseq-pll-tme-hq', 'scoreMarkers.rds'))
+marker_info <- score_markers$cluster_markers
+
+markers_cytokines <- foreach(cl = names(marker_info), .combine = rbind) %do% {
+  res <- marker_info[[cl]] %>% data.frame %>% arrange(desc(mean.AUC)) %>% 
+    filter(gene_name %in% genes_ligands) %>% 
+    filter(median.logFC.cohen > 0.3) 
+  if(nrow(res) > 0 ) 
+    res %>% 
+      mutate(cluster = cl) %>% 
+      dplyr::select(-starts_with('full') ) %>% 
+      dplyr::select(cluster, everything() )
+}
+
+tme_markers_cytokines <- markers_cytokines
+# # Table of results
+# rmd_file <- current_input()
+# if(is.null(rmd_file))
+#   rmd_file <- 'tmp'
+# file_xlsx <- file.path('./docs/file',rmd_file, 'cluster-markers-scoremarkers-tables.xlsx')
+# dir.create(dirname(file_xlsx), recursive = TRUE, showWarnings = FALSE)
+```
+
+#### TME: Heatmap selection of ligands
+```{r cluster-tme-marker-genes-selection-heatmap, fig.asp = 0.7}
+top_mk <- tme_markers_cytokines %>% 
+  dplyr::select(cluster, gene_name) %>% 
+  mutate(
+    cluster = factor(cluster, levels = str_sort(unique(cluster), numeric = TRUE))
+  )
+
+
+# Matrix of top markers
+top_mk_mat <- top_mk %>% 
+  mutate(value = 'yes') %>%
+  pivot_wider(names_from = cluster, values_fill = 'no') %>% 
+  column_to_rownames('gene_name')
+
+# Cluster matrix
+x <- top_mk_mat
+x[x=='no'] <- 0
+x[x=='yes'] <- 0
+row_hclust <- hclust(dist(x))
+row_hclust_labels <- row_hclust$labels[row_hclust$order]
+col_hclust <- hclust(dist(t(x)))
+col_hclust_labels <- col_hclust$labels[col_hclust$order]
+top_mk_mat <- top_mk_mat[row_hclust_labels, col_hclust_labels]
+
+# Heatmap
+ht_colors <- c(yes = '#E66B57', no = 'grey90')
+Heatmap(
+  top_mk_mat,
+  name = '.',
+  col = ht_colors, 
+  rect_gp = gpar(col= "white")
+)
+```
+
+#### TME: Heatmap expression ligands
+```{r cluster-tme-marker-genes-exprs-heatmap, fig.asp = 0.7}
+plotGroupedHeatmap(
+  sce_tme,
+  features=tme_markers_cytokines$gene_name %>% unique, 
+  group="cluster_mnn",
+  center=TRUE, 
+  cluster_cols = FALSE,
+  cluster_rows = FALSE,
+  zlim=c(-3, 3)
+  )
+```
+
+#### TME: UMAP
+```{r cluster-tme-marker-genes-heatmap, fig.width=5.2, fig.asp=1}
+use_genes <- markers_cytokines$gene_name %>% unique
+plot_list <- list()
+for(use_gene in use_genes){
+  plot_list[[use_gene]] <- plotReducedDim(
+      sce_tme, dimred = 'UMAP_corrected', color_by = use_gene, point_alpha = 0.2, point_size = 0.1
+    ) +
+    # scale_colour_continuous_diverging() +
+    scale_colour_distiller( palette = 'Purples', direction = 1) +
+    labs(
+        x = 'UMAP 1',
+        y = 'UMAP 2',
+        color = use_gene
+        # title = use_gene
+      ) +
+    theme(
+      plot.title = element_text(size = 8, face = 'plain'),
+      axis.line = element_line(linewidth = rel(0.5)),
+      axis.text=element_blank(),
+      axis.ticks=element_blank()#,
+      # axis.line =element_blank()
+    )
+}
+plot_grid(plotlist = plot_list, ncol = 3)
+```
+
+### Cluster specific Cytokine-receptors interactions
+```{r lrdb-mouse-site-cl-da-ligands-load}
+iscore_df <- readRDS(file.path(params$output_dir, 'cytokine_receptor_cluster_iscore.rds'))
+iscore_ll_ttest <- readRDS(file.path(params$output_dir, 'cytokine_receptor_cluster_iscore_ll_ttest.rds'))
+```
+
+### Dotplot selected cytokines
+```{r lrdb-mouse-site-cl-da-ligands-dotplot-conf, fig.width=5.2}
+use_data <- iscore_df %>% 
+  mutate(
+     lr_cluster = paste(lr, cluster, sep = '-'), 
+     ligand = gsub("-.*", "", lr),
+     l_cluster =  paste(ligand, cluster, sep = '-')
+  )
+
+# Select interactions from cluster-cytokine markers
+l_cl_sel <- markers_cytokines %>% mutate(l_cluster = paste(gene_name, cluster, sep = '-')) %>% pull(l_cluster)
+
+# # Select interactions with a P < 0.05 in at least one replicate
+# lr_p05 <- use_data %>%
+#   filter(p.value <= 0.05) %>%
+#   pull(lr_cluster) %>%
+#   unique
+# 
+# # Select interactions based on T-test P < 0.05 AND at least one replicate with P < 0.05
+# lr_sel <- iscore_ll_ttest %>%
+#   filter(p <= 0.05) %>% 
+#   mutate(
+#     # max_iscore = ifelse(logFC < 0, m_liver, m_lung),
+#     lr_cluster = paste(lr, cluster, sep = '-')
+#   ) %>% 
+#   filter(lr_cluster %in% lr_p05) %>% 
+#   pull(lr_cluster)
+
+# Generate matrix of iscore to cluster lr pairs
+use_mat <- use_data %>% 
+  filter(l_cluster %in% l_cl_sel) %>% 
+  dplyr::select(lr_cluster, iscore, ct_site_mouse) %>% 
+  pivot_wider(names_from = ct_site_mouse, values_from = iscore) %>% 
+  column_to_rownames('lr_cluster')
+use_mat[is.na(use_mat)] <- 0
+
+row_hclust <- hclust(dist(use_mat))
+row_hclust_labels <- row_hclust$labels[row_hclust$order]
+
+# Generate plot
+use_data_top <- use_data %>% 
+  filter(lr_cluster %in% row_hclust_labels) %>% 
+  mutate(lr_cluster = factor(lr_cluster, levels = row_hclust_labels))
+
+plot_iscore <- use_data_top %>% 
+  ggplot(aes(mouse_id, lr, size = iscore, color = -log10(p.value))) +
+    geom_point() +
+    # geom_point(data = use_data_top %>% filter(p.value <= 0.05), pch = 21, color = 'black', stroke = 1) +
+    # geom_point(data = use_data_top %>% filter(p.value > 0.05), pch = 21, color = 'grey70', stroke = 1, show.legend = FALSE) +
+    # scale_color_distiller(palette = "Reds", na.value = "grey70", direction = 1) +
+    # scale_color_viridis_c(na.value = "grey70") +
+    # scale_colour_gradient2(midpoint = -log10(0.05), low = 'grey90', mid = 'grey90', high = 'firebrick')+
+    scale_color_distiller(palette = "Purples", na.value = "grey70", direction = 1) +
+    facet_grid(cluster~site, scales = 'free', space = 'free') +
+    labs(
+      y = '', 
+      x = 'Mouse replicate',
+      size = 'Interaction\nscore',
+      color = '-log10(P value)',
+      # caption = paste('Showing top', n_top, 'L-R interactions pairs based total score')
+      ) +
+    theme(
+      panel.border = element_rect(color = "black", fill = NA, linewidth = 1),
+      # axis.text.x=element_blank(),
+      axis.ticks.x=element_blank(),
+      axis.line.x = element_blank(),
+      panel.grid.major.y = element_line(linewidth = 0.2, colour="grey60", linetype = 'dashed'),
+      # panel.grid.major.x = element_line(linewidth = 0.2, colour="grey60", linetype = 'dashed'),
+      strip.background = element_blank()#,
+      # strip.text.y = element_blank()
+      )
+
+```
+
+#### Simple
+```{r lrdb-mouse-site-cl-da-ligands-dotplot-simple, fig.width=5.2, fig.asp= 0.8}
+print(plot_iscore)
+```
+
+#### Additional T-test panel
+```{r lrdb-mouse-site-cl-da-ligands-dotplot-pval, fig.width=5.2, fig.asp= 0.8}
+plot_iscore_legend <- cowplot::get_legend(plot_iscore)
+
+plot_p <- iscore_ll_ttest %>% 
+  mutate( lr_cluster = paste(lr, cluster, sep = '-')) %>% 
+  filter(lr_cluster %in% use_data_top$lr_cluster) %>% 
+  mutate(lr_cluster = factor(lr, levels = levels(use_data_top$lr_cluster))) %>% 
+  ggplot(aes(x=-log10(p), y = lr)) +
+  geom_col(fill = 'grey70') +
+  geom_vline(xintercept = -log10(0.05), linetype = 3) +
+  scale_x_continuous(expand = c(0, 0)) +
+  facet_grid(cluster~., scales = 'free', space = 'free') +
+  theme(
+    axis.text.y = element_blank(),
+    axis.ticks.y = element_blank(),
+    axis.line.y = element_blank(),
+    strip.background = element_blank()
+  ) +
+  labs(
+    y = NULL,
+    x = bquote("-log"[10] ~ .(paste0("(P-value)")))
+  )
+
+plot_grid(
+  plot_iscore + guides(color = "none", size = "none") + theme(strip.text.y = element_blank()), 
+  plot_p, 
+  plot_iscore_legend,
+  align = "h", 
+  axis= "tb",
+  nrow = 1, 
+  rel_widths = c(1, 0.3, 0.2))
+
+```
+
+
+### Dotplot selected cytokines with iscore-color
+```{r lrdb-mouse-site-cl-da-ligands-dotplot-2-conf, fig.width=5.2}
+use_data <- iscore_df %>% 
+  mutate(
+     lr_cluster = paste(lr, cluster, sep = '-'), 
+     ligand = gsub("-.*", "", lr),
+     l_cluster =  paste(ligand, cluster, sep = '-')
+  )
+
+# Select interactions from cluster-cytokine markers
+l_cl_sel <- markers_cytokines %>% mutate(l_cluster = paste(gene_name, cluster, sep = '-')) %>% pull(l_cluster)
+
+# Generate matrix of iscore to cluster lr pairs
+use_mat <- use_data %>% 
+  filter(l_cluster %in% l_cl_sel) %>% 
+  dplyr::select(lr_cluster, iscore, ct_site_mouse) %>% 
+  pivot_wider(names_from = ct_site_mouse, values_from = iscore) %>% 
+  column_to_rownames('lr_cluster')
+use_mat[is.na(use_mat)] <- 0
+
+row_hclust <- hclust(dist(use_mat))
+row_hclust_labels <- row_hclust$labels[row_hclust$order]
+
+# Generate plot
+use_data_top <- use_data %>% 
+  filter(lr_cluster %in% row_hclust_labels) %>% 
+  mutate(lr_cluster = factor(lr_cluster, levels = row_hclust_labels))
+
+plot_iscore <- use_data_top %>% 
+  # ggplot(aes(mouse_id, lr, size = iscore, color = -log10(p.value))) +
+  ggplot(aes(mouse_id, lr, size = -log10(p.value), color = iscore)) +
+    geom_point() +
+    # geom_point(data = use_data_top %>% filter(p.value <= 0.05), pch = 21, color = 'black', stroke = 1) +
+    # geom_point(data = use_data_top %>% filter(p.value > 0.05), pch = 21, color = 'grey70', stroke = 1, show.legend = FALSE) +
+    # scale_color_distiller(palette = "Reds", na.value = "grey70", direction = 1) +
+    # scale_color_viridis_c(na.value = "grey70") +
+    # scale_colour_gradient2(midpoint = -log10(0.05), low = 'grey90', mid = 'grey90', high = 'firebrick')+
+    scale_color_distiller(palette = "Purples", na.value = "grey70", direction = 1) +
+    facet_grid(cluster~site, scales = 'free', space = 'free') +
+    labs(
+      y = '', 
+      x = 'Mouse replicate',
+      color = 'Interaction\nscore',
+      size = bquote("-log"[10] ~ .(paste0("(P-value)")))
+      # caption = paste('Showing top', n_top, 'L-R interactions pairs based total score')
+      ) +
+    theme(
+      panel.border = element_rect(color = "black", fill = NA, linewidth = 1),
+      # axis.text.x=element_blank(),
+      axis.ticks.x=element_blank(),
+      axis.line.x = element_blank(),
+      panel.grid.major.y = element_line(linewidth = 0.2, colour="grey60", linetype = 'dashed'),
+      # panel.grid.major.x = element_line(linewidth = 0.2, colour="grey60", linetype = 'dashed'),
+      strip.background = element_blank()#,
+      # strip.text.y = element_blank()
+      )
+```
+
+#### Simple
+```{r lrdb-mouse-site-cl-da-ligands-dotplot-2-simple, fig.width=5.2, fig.asp= 0.8}
+print(plot_iscore)
+```
+
+#### Additional T-test panel
+```{r lrdb-mouse-site-cl-da-ligands-dotplot-2-pval, fig.width=5.2, fig.asp= 0.8}
+plot_iscore_legend <- cowplot::get_legend(plot_iscore)
+
+plot_p <- iscore_ll_ttest %>% 
+  mutate( lr_cluster = paste(lr, cluster, sep = '-')) %>% 
+  filter(lr_cluster %in% use_data_top$lr_cluster) %>% 
+  mutate(lr_cluster = factor(lr, levels = levels(use_data_top$lr_cluster))) %>% 
+  ggplot(aes(x=-log10(p), y = lr)) +
+  geom_col(fill = 'grey70') +
+  geom_vline(xintercept = -log10(0.05), linetype = 3) +
+  scale_x_continuous(expand = c(0, 0)) +
+  facet_grid(cluster~., scales = 'free', space = 'free') +
+  theme(
+    axis.text.y = element_blank(),
+    axis.ticks.y = element_blank(),
+    axis.line.y = element_blank(),
+    strip.background = element_blank()
+  ) +
+  labs(
+    y = NULL,
+    x = bquote("-log"[10] ~ .(paste0("(P-value)")))
+  )
+
+plot_grid(
+  plot_iscore + guides(color = "none", size = "none") + theme(strip.text.y = element_blank()), 
+  plot_p, 
+  plot_iscore_legend,
+  align = "h", 
+  axis= "tb",
+  nrow = 1, 
+  rel_widths = c(1, 0.3, 0.2))
+
+```
+
+
+## UMAP of selected interactions
+Calculate compact coordinates preserving intracluster shape. Plots rasterized using dpi = 600
+```{r final-figures-umap-compact}
+umap_dim <- reducedDim(sce_tme, 'UMAP_corrected')
+dim_1 <- umap_dim[,1]
+dim_1[dim_1 > 6] <- dim_1[dim_1 > 6] - 5
+dim_1[dim_1 < -10] <- dim_1[dim_1 < -10] + 4
+dim_2 <- umap_dim[,2]
+dim_2[dim_2 > 6] <- dim_2[dim_2 > 6] - 7
+dim_2[dim_2 < -9] <- dim_2[dim_2 < -9] + 3
+umap_dim[,1] <- dim_1
+umap_dim[,2] <- dim_2
+reducedDim(sce_tme, 'UMAP_compact') <- umap_dim
+options(ggrastr.default.dpi=600)
+```
+
+### Combined UMAPs
+```{r lr-selected-umap, fig.width=5.2, fig.asp=4}
+lr_sel <- c("Spp1-Cd44", 
+            "Spp1-Itgb1", 
+            'Bmp2-Bmpr2', 
+            'Bmp2-Bmpr1a', 
+            'Bmp2-Eng', 
+            'Bmp2-Acvr1', 
+            'Grn-Tnfrsf1b', 
+            'Grn-Tnfrsf1a', 
+            'Ccl6-Ide',
+            'Bmp6-Acvr1',
+            'Bmp6-Bmpr1a',
+            'Bmp6-Bmpr2')
+
+
+lr <- map(lr_sel, \(x) strsplit(x, "-") %>% unlist) %>% 
+  set_names(lr_sel)
+
+plot_list <- list()
+for(i in names(lr)){
+  # Ligand - TME
+  use_gene <- lr[[i]][1]
+  plot_list[[paste0('tme-',i)]] <- plotReducedDim(sce_tme, dimred = 'UMAP_compact', color_by = use_gene, point_alpha = 0.2, point_size = 0.1, rasterise = TRUE) +
+    # scale_colour_continuous_diverging() +
+    scale_colour_distiller( palette = 'Purples', direction = 1) +
+    labs(
+        x = 'UMAP 1',
+        y = 'UMAP 2',
+        color = use_gene,
+        title = paste('TME',i)
+      ) +
+    theme(
+      plot.title = element_text(size = 8, face = 'plain'),
+      axis.line = element_line(linewidth = rel(0.5)),
+      axis.text=element_blank(),
+      axis.ticks=element_blank()#,
+      # axis.line =element_blank()
+    )
+  # Receptor - Cancer
+  use_gene <- lr[[i]][2]
+  plot_list[[paste0('cancer-',i)]] <- plotReducedDim(sce_cancer, dimred = 'UMAP_corrected', color_by = use_gene, point_alpha = 0.2, point_size = 0.1, rasterise = TRUE) +
+    # scale_colour_continuous_diverging() +
+    scale_colour_distiller( palette = 'Greens', direction = 1) +
+    labs(
+        x = 'UMAP 1',
+        y = 'UMAP 2',
+        color = use_gene,
+        title = paste('Cancer',i)
+      ) +
+    theme(
+      plot.title = element_text(size = 8, face = 'plain'),
+      axis.line = element_line(linewidth = rel(0.5)),
+      axis.text=element_blank(),
+      axis.ticks=element_blank()#,
+      # axis.line =element_blank()
+    )
+}
+
+plot_grid(plotlist = plot_list, ncol = 2)
+```
+
+### Individual UMAPs
+```{r  lr-selected-umap-indv-conf}
+for(i in names(lr)){
+  # Ligand - TME
+  use_gene <- lr[[i]][1]
+  plot_list[[paste0('tme-',i)]] <- plotReducedDim(sce_tme, dimred = 'UMAP_compact', color_by = use_gene, point_alpha = 0.2, point_size = 0.01, rasterise = TRUE) +
+    # scale_colour_continuous_diverging() +
+    scale_colour_distiller( palette = 'Purples', direction = 1) +
+   labs(
+        x = '',
+        y = '',
+        color = use_gene,
+        title = paste0('tme-',i)
+      ) +
+    theme(
+      plot.title = element_text(size = 3.5, face = 'plain'),
+      axis.line = element_line(linewidth = rel(0.5)),
+      axis.text=element_blank(),
+      axis.ticks=element_blank(),
+      # axis.line =element_blank(),
+      legend.key.size = unit(0.05, 'inches'), #change legend key size
+      # legend.key.height = unit(1, 'inches'), #change legend key height
+      # legend.key.width = unit(1, 'inches'), #change legend key width
+      legend.text = element_text(size=3.5),
+      legend.title = element_text(size=3.5),
+      legend.box.spacing = unit(0, "inches")
+    )
+  # Receptor - Cancer
+  use_gene <- lr[[i]][2]
+  plot_list[[paste0('cancer-',i)]] <- plotReducedDim(sce_cancer, dimred = 'UMAP_corrected', color_by = use_gene, point_alpha = 0.2, point_size = 0.01, rasterise = TRUE) +
+    # scale_colour_continuous_diverging() +
+    scale_colour_distiller( palette = 'Greens', direction = 1) +
+    labs(
+        x = '',
+        y = '',
+        color = use_gene,
+        title = paste0('cancer-',i)
+      ) +
+    theme(
+      plot.title = element_text(size = 3.5, face = 'plain'),
+      axis.line = element_line(linewidth = rel(0.5)),
+      axis.text=element_blank(),
+      axis.ticks=element_blank(),
+      # axis.line =element_blank(),
+      legend.key.size = unit(0.05, 'inches'), #change legend key size
+      # legend.key.height = unit(1, 'inches'), #change legend key height
+      # legend.key.width = unit(1, 'inches'), #change legend key width
+      legend.text = element_text(size=3.5),
+      legend.title = element_text(size=3.5),
+      legend.box.spacing = unit(0, "inches")
+    )
+}
+```
+
+```{r lr-selected-umap-indv, fig.dim=c(1.22, 1.10), dpi = 200}
+
+i <- names(plot_list)[1]
+for(i in names(plot_list)){
+  cat("####", i, '\n\n')
+  print(
+    plot_list[[i]]
+    )
+  cat("\n\n")
+}
+```
+
+
+### Cytokines UMAP
+```{r cytokines-selected-umap, fig.width=5.2, fig.asp=3}
+gene_sel <- c(
+  'Bmp2',
+  'Bmp6',
+  'Grn',
+  'Tnfrsf1a',
+  'Tnfrsf1b',
+  'Ccl6',
+  'Ide'
+  )
+
+plot_list <- list()
+use_gene <- gene_sel[1]
+for(use_gene in gene_sel){
+  
+  # Unify rage
+  max_tme <- logcounts(sce_tme[use_gene,]) %>% max
+  max_cancer <- logcounts(sce_cancer[use_gene,]) %>% max
+  use_limits <- c(0, max(max_tme, max_cancer))
+
+  # TME
+  plot_list[[paste0('tme-',use_gene)]] <- plotReducedDim(sce_tme, dimred = 'UMAP_compact', color_by = use_gene, point_alpha = 0.2, point_size = 0.1, rasterise = TRUE) +
+    # scale_colour_continuous_diverging() +
+    scale_colour_distiller( palette = 'Purples', direction = 1,
+                            limits = use_limits) +
+    labs(
+        x = 'UMAP 1',
+        y = 'UMAP 2',
+        color = use_gene,
+        title = paste('TME',use_gene)
+      ) +
+    theme(
+      plot.title = element_text(size = 8, face = 'plain'),
+      axis.line = element_line(linewidth = rel(0.5)),
+      axis.text=element_blank(),
+      axis.ticks=element_blank()#,
+      # axis.line =element_blank()
+    )
+  
+  # Receptor - Cancer
+  plot_list[[paste0('cancer-',use_gene)]] <- plotReducedDim(sce_cancer, dimred = 'UMAP_corrected', color_by = use_gene, point_alpha = 0.2, point_size = 0.1, rasterise = TRUE) +
+    # scale_colour_continuous_diverging() +
+    scale_colour_distiller( palette = 'Greens', direction = 1,
+                            limits = use_limits) +
+    labs(
+        x = 'UMAP 1',
+        y = 'UMAP 2',
+        color = use_gene,
+        title = paste('Cancer',use_gene)
+      ) +
+    theme(
+      plot.title = element_text(size = 8, face = 'plain'),
+      axis.line = element_line(linewidth = rel(0.5)),
+      axis.text=element_blank(),
+      axis.ticks=element_blank()#,
+      # axis.line =element_blank()
+    )
+}
+
+plot_grid(plotlist = plot_list, ncol = 2)
+
+```

@@ -1,0 +1,447 @@
+---
+title: "10x RNA-seq analysis of MVT1 cancer and microenvironment in tumor and mets"
+subtitle: "Analysis of ligand-receptor interactions using LRdb from SingleCellSignalR and CellPhoneDB"
+author: "Francesc Castro-Giner"
+date: '`r format(Sys.Date(), "%B %d, %Y")`'
+output: workflowr::wflow_html
+editor_options:
+  chunk_output_type: console
+params:
+  date: '`r format(Sys.Date(), "%B %d, %Y")`'
+  cellranger_count_dir: ./data/rnaseq/p26532_o28268/pipelines/cellranger_featurebarcodes
+  lrdb_dir: ./output/p26532_o28268/p26532_o28268-10x_rnaseq-pll-lr-hq-lrdb
+  cellphonedb_dir: ./output/p26532_o28268/p26532_o28268-10x_rnaseq-pll-lr-hq-cellphonedb
+  ncores: 6
+---
+
+
+## Load libraries, additional functions and data
+
+Setup environment
+```{r setup, include=TRUE, warning=FALSE, message=FALSE}
+knitr::opts_chunk$set(
+	echo = TRUE,
+	error = FALSE,
+	fig.align = "center",
+	fig.asp = 0.618,
+	fig.showtext = FALSE,
+	fig.width = 3.5,
+	message = FALSE,
+	warning = FALSE,
+	dev = c("png", "pdf"),
+	dpi = 600,
+	engine.opts = list(bash = "-l"),
+	results = "asis"
+)
+options(stringsAsFactors = FALSE)
+
+use_seed <- 1100101
+set.seed(use_seed)
+```
+
+Load packages
+```{r load-libraries}
+library(tidyverse)
+library(showtext)
+library(foreach)
+library(DT)
+library(knitr)
+library(kableExtra)
+library(cowplot)
+library(colorblindr)
+library(openxlsx)
+library(ggpubr)
+library(magrittr)
+
+library(org.Mm.eg.db)
+library(org.Hs.eg.db)
+library(ComplexHeatmap)
+library(circlize)
+library(ggbeeswarm)
+# library(arsenal)
+library(RColorBrewer)
+# library(ggpubr)
+# library(pheatmap)
+# library(patchwork)
+# library(ggrepel)
+# library(openxlsx)
+# 
+library(scater)
+# library(DropletUtils)
+# library(Seurat)
+# library(scran)
+# library(BiocSingular)
+# library(batchelor)
+# library(bluster)
+# library(celldex)
+# library(SingleR)
+# library(speckle)
+# library(miloR)
+# library(clusterProfiler)
+```
+
+Set font family for figures
+```{r set-font, eval = FALSE}
+font_add("Helvetica", "./configuration/fonts/Helvetica.ttc")
+showtext_auto()
+```
+
+Load ggplot theme
+```{r ggplot-theme}
+source("./configuration/rmarkdown/ggplot_theme.R")
+source("./configuration/rmarkdown/color_palettes.R")
+```
+
+Load custom functions
+```{r load-functions}
+iscore.permutation.test <- function(x, y, n){
+  original <- avg_ligand*avg_receptor
+  distribution <- foreach(i=1:n, .combine = c) %do% {
+    x*(sample(y, length(y), FALSE))
+  }
+  foreach(o = original, .combine = c) %do% {
+    sum(distribution >= o)/length(distribution)
+  }
+}
+normalize01 <- function(x) {
+  (x - min(x)) / ( max(x) -  min(x))
+}
+```
+
+Clean files generated in previous runs
+```{r clean-files}
+rmd_file <- current_input()
+if(!is.null(rmd_file)) {
+  figures_dir <- file.path('./docs/figure',rmd_file)
+  if(dir.exists(figures_dir)) {
+    unlink(file.path(figures_dir, "*"))
+  }
+}
+
+```
+
+Other configuration
+```{r conf-general}
+# Site levels order
+site_caps_ord <- c('Primary tumor', 'Liver', 'Lung')
+
+#Select specific interactions
+lrdb_selected_interacting_pair <- c(
+  'Acvr1-Bmpr2-Bmp6',
+  'Bmpr1a-Bmpr2-Bmp6',
+  'Bmpr1a-Bmpr2-Bmp2',
+  
+  'Tnfrsf1a-Grn',
+  'Tnfrsf1b-Grn',
+  'Ide-Ccl9',  # Ccl9 and Ccl6 are othologous for CCL23
+  'Ide-Ccl6',
+  
+  'Grn-Tnfrsf1a',
+  'Grn-Tnfrsf1b',
+  'Ccl9-Ide',  # Ccl9 and Ccl6 are othologous for CCL23
+  'Ccl6-Ide',
+  
+  'Bmp2-Bmpr2',
+  'Bmp2-Bmpr1a',
+  'Bmp2-Acvr1',
+  'Spp1-Itgb1'
+  )
+
+cellphonedb_selected_interacting_pair <- c(
+  'Acvr1_Bmpr2_Bmp6',
+  'Bmpr1a_Bmpr2_Bmp6',
+  'Bmpr1a_Bmpr2_Bmp2',
+  
+  'Tnfrsf1a_Grn',
+  'Tnfrsf1b_Grn',
+  'Ide_Ccl9',  # Ccl9 and Ccl6 are othologous for CCL23
+  'Ide_Ccl6',
+  
+  'Grn_Tnfrsf1a',
+  'Grn_Tnfrsf1b',
+  'Ccl9_Ide',  # Ccl9 and Ccl6 are othologous for CCL23
+  'Ccl6_Ide'
+  )
+
+selected_interacting_pair <- c(
+  lrdb_selected_interacting_pair,
+  cellphonedb_selected_interacting_pair
+) %>% unique
+```
+
+## Cytokine-receptor interaction
+```{r lrdb-mouse-site-load}
+iscore_df <- readRDS(file.path(params$lrdb_dir, 'cytokine_receptor_iscore.rds')) %>% 
+  mutate(
+    site = factor(site, site_caps_ord),
+    source = 'LRdb'
+    )
+iscore_ll_ttest <- readRDS(file.path(params$lrdb_dir, 'cytokine_receptor_iscore_ll_ttest.rds'))
+```
+
+
+```{r cellphonedb-tme_merged-load}
+cpd_merged <- readRDS(file = file.path(params$cellphonedb_dir, 
+                                       'tme_merged-cpdb.rds')) %>% 
+  mutate(
+    site = factor(site, site_caps_ord),
+    source = 'CPdb'
+    )
+
+cpd_ll_ttest <- readRDS(file = file.path(params$cellphonedb_dir, 
+                                            'tme_merged-cpdb-ll-ttest.rds'))
+
+# modify cpd to have same format as iscore_df
+cpd_merged <- cpd_merged %>% 
+   dplyr::rename(
+     lr = interacting_pair,
+     mouse_id = mouse, 
+     iscore = mean,
+     iscore_norm = mean_norm
+   ) %>% 
+   mutate(
+     site_mouse = paste(site, mouse_id, sep = '_'),
+     p.value = NA,
+     p.value_scaled = NA,
+     iscore_scaled = NA
+   ) %>% 
+   dplyr::select(all_of(colnames(iscore_df)))
+
+# Combine with iscore data
+iscore_df <- rbind(iscore_df, cpd_merged)
+iscore_ll_ttest <- rbind(iscore_ll_ttest, cpd_ll_ttest)
+```
+
+
+### Stripchart - Selected interactions
+```{r lrdb-cpdb-mouse-site-sel-stripchart, fig.dim=c(4.3078, 8.164469)}
+use_data <- iscore_df %>% 
+  mutate(
+    mouse_id =  gsub('mouse_', '', mouse_id),
+    site_mouse = paste(site, mouse_id, sep = '_')
+  ) %>% 
+  filter(lr %in% selected_interacting_pair)
+
+use_lr <- intersect(selected_interacting_pair, use_data$lr)
+
+# Manual P-values
+lr_y_pos <- use_data %>% 
+  filter(lr %in% use_lr) %>% 
+  group_by(lr) %>% 
+  summarise(y.max = max(iscore)) %>% 
+  mutate(y.position = y.max + (0.10*y.max))
+
+use_test <- iscore_ll_ttest %>% filter(lr %in% use_lr) %>% 
+  dplyr::rename(group1=m_lung, group2=m_liver) %>% 
+  mutate(
+    group1 = 'Liver',
+    group2 = 'Lung',
+    # groups =  list(c('Liver', 'Lung')),
+    # xmin = 1,
+    # xmax = 2,
+    p = format.pval(p, digits = 1)
+  ) %>% 
+  left_join(lr_y_pos)
+
+  
+use_data %>% 
+  filter(lr %in% use_lr) %>%
+  mutate(lr = factor(lr, levels = selected_interacting_pair)) %>% 
+  ggplot(aes(site, iscore, size = -log10(p.value))) +
+  geom_boxplot(alpha = 0.4, color = 'black', aes(fill = site), show.legend = FALSE, size = 0.25, fatten = 1) +
+  geom_quasirandom(method="smiley", width = 0.1, alpha = 1, size = 2, shape = 21, color = 'black', aes(fill = site), stroke = 0.4) +
+  # stat_compare_means(comparisons = list(c("Liver", "Lung")), method = 't.test') +
+  stat_pvalue_manual(use_test,  label = "p = {p}", vjust = -0.5, label.size = geom_text_size) +
+  # scale_fill_OkabeIto() +
+  # scale_color_OkabeIto() +
+  scale_fill_manual(values = site_palette) +
+  scale_color_manual(values = site_palette) +
+  scale_y_continuous(expand = c(0.05, 0, 0.35, 0)) +
+  scale_x_discrete(expand = c(0, 0.5)) +
+  facet_wrap(vars(lr), scales = 'free_y', ncol = 2) +
+  theme(
+    # axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1)
+    axis.text.x=element_blank(),
+    axis.ticks.x=element_blank(),
+    panel.border = element_rect(colour = "black", size=0.5),
+    axis.line = element_blank(),
+    strip.background = element_blank()
+  ) +
+  guides(fill = guide_legend(override.aes = list(size = 3))) +
+  labs(
+    fill = NULL, 
+    x = NULL,
+    y = 'Interaction score',
+    caption = 'One-sided T-test P value'
+  )
+
+```
+
+
+
+## Cytokine-receptor interaction by cell type
+
+```{r lrdb-mouse-site-ct-load}
+iscore_df <- readRDS(file.path(params$lrdb_dir, 'cytokine_receptor_celltype_iscore.rds')) %>% 
+  mutate(
+     site = factor(site, site_caps_ord),
+     source = 'LRdb'
+     )
+iscore_ll_ttest <- readRDS(file.path(params$lrdb_dir, 'cytokine_receptor_celltype_iscore_ll_ttest.rds'))
+```
+
+
+```{r cpdb-mouse-site-ct-load}
+cpd_merged <- readRDS(file = file.path(params$cellphonedb_dir, 'site_type-cpdb.rds')) %>% 
+  mutate(
+    site = factor(site, site_caps_ord),
+    source = 'CPdb'
+    ) %>% 
+  filter(celltype_src == "immgen") %>% 
+  filter(interacting_partner != "Cancer")
+
+# modify cpd to have same format as iscore_df
+cpd_merged <- cpd_merged %>% 
+  dplyr::rename(
+    lr = interacting_pair,
+    cell_type = interacting_partner,
+    mouse_id = mouse, 
+    iscore = mean,
+    iscore_norm = mean_norm
+    ) %>% 
+  mutate(
+    site_mouse = paste(site, mouse_id, sep = '_'),
+    ct_site_mouse =  paste(cell_type, site_mouse, sep = '_'),
+    ct_lr = paste(cell_type, lr, sep = '_'),
+    p.value = NA,
+    p.value_scaled = NA
+    ) %>% 
+  dplyr::select(all_of(colnames(iscore_df)))
+# Combine with iscore data
+iscore_df <- rbind(iscore_df, cpd_merged)
+```
+
+
+### Dot plots all cell types
+```{r lrdb-cpdb-mouse-site-all_ct-dotplot-conf}
+use_data <- iscore_df %>% 
+  group_by(lr, cell_type, site) %>% 
+  summarise(miscore = median(iscore))
+
+use_data_to_plot <- use_data %>%
+  mutate(site = gsub("_", "\n", site)) %>%
+  mutate(cell_type = gsub(" ", "\n", cell_type)) %>%
+  filter(lr %in% selected_interacting_pair) %>% 
+  mutate(lr = factor(lr, levels = selected_interacting_pair))
+ 
+# Add empty levels
+ipartner_levels <- unique(use_data_to_plot$cell_type)
+site_levels <- unique(iscore_df$site)
+ 
+new_data <- foreach(ipair = unique(use_data_to_plot$lr), .combine = rbind) %do% {
+  foreach(ipartner = ipartner_levels, .combine = rbind) %do% {
+    foreach(isite = site_levels, .combine = rbind) %do% {
+      fdata <- use_data_to_plot %>% 
+        filter(lr == ipair & cell_type == ipartner & isite == site)
+      if(nrow(fdata) == 0){
+        data.frame(lr = ipair, cell_type = ipartner, site = isite, miscore = 0)
+        } else {
+          fdata %>% data.frame
+        }
+    }
+  }
+}
+ 
+use_data_to_plot <- new_data
+```
+
+#### Normal plot
+```{r lrdb-cpdb-mouse-site-all_ct-dotplot, fig.dim=c(4.3078, 8.164469)}
+use_data_to_plot %>% 
+  ggplot(aes(cell_type, site, 
+             size = miscore,
+             color = miscore)) +
+  geom_point() +
+  scale_color_distiller(palette = "Purples", na.value = "grey70", direction = 1) +
+  # scale_color_purpleslog10scaled +
+  # scale_color_viridis_log10scaled +
+  facet_wrap(lr~., ncol = 2) +
+  theme(
+    axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1),
+    axis.ticks.y=element_blank(),
+    panel.border = element_rect(colour = "black", size=0.5),
+    panel.grid.major.x = element_line(linewidth = 0.2, colour="grey60", linetype = 'dashed'),
+    strip.background = element_blank()
+  ) +
+  labs(
+    x = NULL,
+    y = '',
+    color = 'Median\nscore', 
+    size = 'Median\nscore',
+    caption = 'Showing median score across replicates'
+  )
+```
+
+#### Color palette log10 scale
+
+The breaks in the color palette are scaled using log10. In order to avoid -Inf (log10(0)) values, 0 were transformed into 0.1.
+```{r lrdb-cpdb-mouse-site-all_ct-dotplot-log10palette, fig.dim=c(4.3078, 8.164469)}
+scale_color_purpleslog10scaled <- scale_colour_gradientn(
+  colors = scales::brewer_pal(palette = "Purples")(9),
+  values = rev(1-log10(seq(1:10))),
+  trans = 'log10'
+)
+
+use_data_to_plot %>% 
+  ggplot(aes(cell_type, site, 
+             size = miscore,
+             color = miscore)) +
+  geom_point() +
+  scale_color_purpleslog10scaled +
+  facet_wrap(lr~., ncol = 2) +
+  theme(
+    axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1),
+    axis.ticks.y=element_blank(),
+    panel.border = element_rect(colour = "black", size=0.5),
+    panel.grid.major.x = element_line(linewidth = 0.2, colour="grey60", linetype = 'dashed'),
+    strip.background = element_blank()
+  ) +
+  labs(
+    x = NULL,
+    y = '',
+    color = 'Median\nscore', 
+    size = 'Median\nscore',
+    caption = 'Showing median score across replicates'
+  )
+```
+
+
+#### Color capped
+In the plot below, the color scale is capped at 2, limiting all values above 2 into 2. The labels in the color legend need to be modifed, and 2 should become ≥ 2.
+```{r lrdb-cpdb-mouse-site-all_ct-dotplot-color_capped, fig.dim=c(4.3078, 8.164469)}
+use_data_to_plot %>% 
+  mutate(miscore_color = ifelse(miscore >= 2, 2, miscore)) %>% 
+  ggplot(aes(cell_type, site, 
+             size = miscore,
+             color = miscore_color)) +
+  geom_point() +
+  scale_color_distiller(palette = "Purples", na.value = "grey70", direction = 1) +
+  # scale_color_purpleslog10scaled +
+  # scale_color_viridis_log10scaled +
+  facet_wrap(lr~., ncol = 2) +
+  theme(
+    axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1),
+    axis.ticks.y=element_blank(),
+    panel.border = element_rect(colour = "black", size=0.5),
+    panel.grid.major.x = element_line(linewidth = 0.2, colour="grey60", linetype = 'dashed'),
+    strip.background = element_blank()
+  ) +
+  labs(
+    x = NULL,
+    y = '',
+    color = 'Median\nscore', 
+    size = 'Median\nscore',
+    caption = 'Showing median score across replicates'
+  )
+```
+

@@ -1,0 +1,2478 @@
+---
+title: "10x RNA-seq analysis of MVT1 cancer and microenvironment in tumor and mets"
+subtitle: "Analysis of ligand-receptor interactions using CellPhoneDB in primary tumor, lung and liver metastases"
+author: "Francesc Castro-Giner"
+date: '`r format(Sys.Date(), "%B %d, %Y")`'
+output: workflowr::wflow_html
+editor_options:
+  chunk_output_type: console
+params:
+  date: '`r format(Sys.Date(), "%B %d, %Y")`'
+  cellranger_count_dir: ./data/rnaseq/p26532_o28268/pipelines/cellranger_featurebarcodes
+  output_dir: ./output/p26532_o28268/p26532_o28268-10x_rnaseq-pll-lr-hq-cellphonedb
+  ncores: 12
+---
+
+
+## Load libraries, additional functions and data
+
+Setup environment
+```{r setup, include=TRUE, warning=FALSE, message=FALSE}
+knitr::opts_chunk$set(results='asis', echo=TRUE, message=FALSE, warning=FALSE, error=FALSE, fig.align = 'center', fig.width = 3.5, fig.asp = 0.618, dpi = 600, dev = c("png", "pdf", "svg"), fig.showtext = FALSE, engine.opts = list(bash = "-l"))
+
+options(stringsAsFactors = FALSE)
+
+use_seed <- 1100101
+set.seed(use_seed)
+
+dir.create(params$output_dir, recursive = TRUE, showWarnings = FALSE)
+```
+
+Load packages
+```{r load-libraries}
+library(tidyverse)
+library(showtext)
+library(foreach)
+library(DT)
+library(knitr)
+library(kableExtra)
+library(cowplot)
+library(colorblindr)
+library(openxlsx)
+library(magrittr)
+library(ggpubr)
+
+library(org.Mm.eg.db)
+library(org.Hs.eg.db)
+library(ComplexHeatmap)
+library(circlize)
+library(ggbeeswarm)
+# library(arsenal)
+library(RColorBrewer)
+# library(ggpubr)
+# library(pheatmap)
+# library(patchwork)
+# library(ggrepel)
+# library(openxlsx)
+# 
+library(scater)
+# library(DropletUtils)
+# library(Seurat)
+# library(scran)
+# library(BiocSingular)
+# library(batchelor)
+# library(bluster)
+# library(celldex)
+# library(SingleR)
+# library(speckle)
+# library(miloR)
+# library(clusterProfiler)
+```
+
+Set font family for figures
+```{r set-font, eval = FALSE}
+font_add("Helvetica", "./configuration/fonts/Helvetica.ttc")
+showtext_auto()
+```
+
+Load ggplot theme
+```{r ggplot-theme}
+source("./configuration/rmarkdown/ggplot_theme.R")
+source("./configuration/rmarkdown/color_palettes.R")
+```
+
+Load custom functions
+```{r load-functions}
+iscore.permutation.test <- function(x, y, n){
+  original <- avg_ligand*avg_receptor
+  distribution <- foreach(i=1:n, .combine = c) %do% {
+    x*(sample(y, length(y), FALSE))
+  }
+  foreach(o = original, .combine = c) %do% {
+    sum(distribution >= o)/length(distribution)
+  }
+}
+
+normalize01 <- function(x) {
+  (x - min(x)) / ( max(x) -  min(x))
+}
+```
+
+Clean files generated in previous runs
+```{r clean-files}
+rmd_file <- current_input()
+if(!is.null(rmd_file)) {
+  figures_dir <- file.path('./docs/figure',rmd_file)
+  if(dir.exists(figures_dir)) {
+    unlink(file.path(figures_dir, "*"))
+  }
+}
+
+```
+
+## Data processing
+
+### List of cytokines genes
+```{r cytokines-gene-list, eval = FALSE}
+cytokines_eg <- as.list(org.Mm.egGO2ALLEGS[mappedkeys(org.Mm.egGO2ALLEGS)])[['GO:0005125']]
+xx <- as.list(org.Mm.egALIAS2EG)
+cytokines_symbol <- names(xx)[xx %in% cytokines_eg]
+# cytokines_symbol <- cytokines_symbol[cytokines_symbol %in% rownames(sce_comb)]
+cytokines_eg <- as.list(org.Hs.egGO2ALLEGS[mappedkeys(org.Hs.egGO2ALLEGS)])[['GO:0005125']]
+xx <- as.list(org.Hs.egALIAS2EG)
+cytokines_symbol_hs <- names(xx)[xx %in% cytokines_eg]
+res <- list(
+  mm = cytokines_symbol,
+  hs = cytokines_symbol_hs
+)
+saveRDS(res, file.path(params$output_dir, 'cytokines_list_GO_0005125.rds'))
+```
+
+### Load required data
+```{r load-data}
+sce_cancer <- readRDS(file.path('./output/p26532_o28268/p26532_o28268-10x_rnaseq-pll-cancer_cell', 'sce_integrated.rds'))
+sce_tme <- readRDS(file.path("./output/p26532_o28268/p26532_o28268-10x_rnaseq-pll-tme", 'sce_integrated-tme.rds'))
+sr_immgen <- readRDS(file.path("./output/p26532_o28268/p26532_o28268-10x_rnaseq-pll-tme", 'SingleR_ImmGenData_annotation-tme.rds'))
+
+sce_cancer$mean_logcounts <- colMeans2(logcounts(sce_cancer))
+sce_tme$mean_logcounts <- colMeans2(logcounts(sce_tme))
+
+sce_tme$celltype_immgen_pruned.labels <- sr_immgen$pred$pruned.labels
+sce_tme$celltype_immgen_pruned.labels.fine <- sr_immgen$pred_fine$pruned.labels
+
+# # Add new colData vars
+# colData(sce_cancer) <- colData(sce_cancer) %>% data.frame %>% 
+#   mutate(
+#     site = ifelse(site == 'liver', 'Liver', site),
+#     site = ifelse(site == 'lung', 'Lung', site),
+#     site = ifelse(site == 'primary_tumor', 'Primary tumor', site),
+#   ) %>% 
+#   DataFrame
+# colData(sce_tme) <- colData(sce_tme) %>% data.frame %>% 
+#   mutate(
+#     site = ifelse(site == 'liver', 'Liver', site),
+#     site = ifelse(site == 'lung', 'Lung', site),
+#     site = ifelse(site == 'primary_tumor', 'Primary tumor', site),
+#   ) %>% 
+#   DataFrame
+
+# Load cytokines list
+cytokines_go_0005125 <- readRDS(file.path(params$output_dir, 'cytokines_list_GO_0005125.rds'))
+cytokines_symbol <- cytokines_go_0005125$mm
+cytokines_symbol_hs <- cytokines_go_0005125$hs
+
+# Site levels
+site_caps_ord <- c('Primary tumor', 'Liver', 'Lung')
+```
+
+### Installation of CellPhoneDB v3.1.0
+
+Using version v3.1.0. As of March 10th a newer version is available, v4.0.0.
+```{bash CellPhoneDB-installation, eval = FALSE}
+mkdir -p ./output/p26532_o28268/p26532_o28268-10x_rnaseq-pll-lr-hq-cellphonedb/CellPhoneDB/environments
+ml load gcc/6.3.0 python/3.8.5 r/4.1.3 
+python -m venv ./output/p26532_o28268/p26532_o28268-10x_rnaseq-pll-lr-hq-cellphonedb/CellPhoneDB/environments/cpdb
+source ./output/p26532_o28268/p26532_o28268-10x_rnaseq-pll-lr-hq-cellphonedb/CellPhoneDB/environments/cpdb/bin/activate
+pip install --upgrade pip
+pip install cellphonedb==3.1.0
+cellphonedb database download
+deactivate
+```
+
+### Generate CellPhoneDb input files
+
+We are using database v4.0.0
+```{r cellphonedb-input-conf, eval = FALSE}
+out_path <- file.path(params$output_dir, 'CellPhoneDB', 'input_files')
+dir.create(out_path, recursive = TRUE, showWarnings = FALSE)
+
+# Get MM to HS orthologs
+library(biomaRt)
+mart_human <- useMart("ensembl", dataset = "hsapiens_gene_ensembl", host = "https://dec2021.archive.ensembl.org/") 
+mart_mouse <- useMart("ensembl", dataset = "mmusculus_gene_ensembl", host = "https://dec2021.archive.ensembl.org/")
+mm_to_hs <- getLDS(
+  attributes = c("external_gene_name"), 
+  filters = "external_gene_name", 
+  values = unique(c(rownames(sce_tme), rownames(sce_cancer))),
+  mart = mart_mouse, 
+  attributesL = c("hgnc_symbol"), 
+  martL = mart_human
+)
+```
+
+CellPhoneDB by site and cell type : Generate matrix of counts, metadata and batch files
+```{r cellphonedb_site_type_input_files, eval = FALSE}
+use_mouse <- "mouse_1"
+use_site <- "Lung"
+    
+# Generate input files
+for( use_mouse in sce_cancer$mouse_id %>% unique) {
+  # Select shared sites in cancer and tme sets
+  cancer_sites <- colData(sce_cancer) %>% data.frame %>% filter(mouse_id == use_mouse) %>% collect %>% .[['site']] %>% unique
+  tme_sites <- colData(sce_tme) %>% data.frame %>% filter(mouse_id == use_mouse) %>% collect %>% .[['site']] %>% unique
+  use_sites <- intersect(cancer_sites, tme_sites)
+  use_site <- use_sites[1]
+  for (use_site in use_sites) {
+
+    # Subset of cancer cells
+    use_cols <-  sce_cancer$site == use_site & sce_cancer$mouse_id == use_mouse
+    # use_rows <- rownames(sce_cancer) %in% genes_receptors
+    use_sce_cancer <- sce_cancer[, use_cols]
+
+    # Subset of tme cells
+    use_cols <-  sce_tme$site == use_site & sce_tme$mouse_id == use_mouse
+    # use_rows <- rownames(sce_tme) %in% genes_ligands
+    use_sce_tme <- sce_tme[, use_cols]
+
+    # Mouse to Human orthologs
+    use_sce_cancer <- use_sce_cancer[mm_to_hs$Gene.name,]
+    rownames(use_sce_cancer) <- mm_to_hs$HGNC.symbol
+    use_sce_cancer <- use_sce_cancer[!duplicated(rownames(use_sce_cancer)),]
+
+    use_sce_tme <- use_sce_tme[mm_to_hs$Gene.name,]
+    rownames(use_sce_tme) <- mm_to_hs$HGNC.symbol
+    use_sce_tme <- use_sce_tme[!duplicated(rownames(use_sce_tme)),]
+
+    # Prepare metadata to combine
+    use_sce_cancer$Cell <- paste(use_sce_cancer$Sample, use_sce_cancer$Barcode, sep = '_')
+    use_sce_tme$Cell <- paste(use_sce_tme$Sample, use_sce_tme$Barcode, sep = '_')
+
+    use_sce_cancer$celltype_immgen_pruned.labels  <- 'Cancer'
+
+    colData(use_sce_cancer) %<>% data.frame %>% dplyr::select(Cell, celltype_immgen_pruned.labels) %>% DataFrame
+    colData(use_sce_tme) %<>% data.frame %>% dplyr::select(Cell, celltype_immgen_pruned.labels) %>% DataFrame
+
+    # Remove reducedDims
+    reducedDims(use_sce_cancer) <- NULL
+    reducedDims(use_sce_tme) <- NULL
+    
+    # Combine sets
+    use_sce_bind <- cbind(use_sce_cancer, use_sce_tme)
+    rm(use_sce_cancer, use_sce_tme)
+
+    # Job file template
+    lines_to_write <- c(
+      "#!/bin/bash",
+      "ml purge; ml load gcc/6.3.0 python/3.8.5 r/4.1.3",
+      "source ./environments/cpdb/bin/activate",
+      "mkdir -p results",
+      NA,
+      "deactivate"
+    )
+    
+    #
+    # Files for ImmGen annotation
+    #
+    use_suffix <- 'immgen'
+    use_coldata_var <- 'celltype_immgen_pruned.labels'
+    counts_file <- file.path(out_path, paste0(use_site,".",use_mouse,".", use_suffix, ".counts.txt"))
+    meta_file <- file.path(out_path, paste0(use_site,".",use_mouse,".", use_suffix,".meta.txt"))
+    project_name <- paste0(use_site,".",use_mouse,".",use_suffix)
+    job_file <- file.path(params$output_dir, 'CellPhoneDB', paste0(use_site,".",use_mouse,".", use_suffix, ".sh"))
+    
+    # Generate metadata files
+    use_meta <- colData(use_sce_bind) %>%
+      data.frame %>%
+      dplyr::select(any_of(c("Cell", use_coldata_var))) %>%
+      set_names(c("Cell", "cell_type")) %>%
+      filter(!is.na(cell_type))
+
+    # Remove cell types with less than 25 cells
+    ct_tab <- table(use_meta$cell_type)
+    use_ct <- names(ct_tab)[ct_tab>=25]
+    use_meta <- use_meta %>% filter(cell_type %in% use_ct)
+    write_tsv(use_meta, file = meta_file)
+
+    # Generate counts file
+    counts_mat <- counts(use_sce_bind) %>% as.matrix
+    colnames(counts_mat) <- use_sce_bind$Cell
+    counts_mat <- counts_mat[,use_meta$Cell]
+    counts_mat <- counts_mat %>% data.frame(check.names = FALSE) %>% rownames_to_column('Gene')
+    write_tsv(counts_mat, file = counts_file)
+    rm(counts_mat)
+
+    # Generate job file
+    lines_to_write[5] <- paste0("cellphonedb method statistical_analysis ./input_files/", basename(meta_file)," ./input_files/", basename(counts_file)," --counts-data=hgnc_symbol --threads=",params$ncores," --project-name=", project_name," --iterations=1000 --output-path=./results --database=~/.cpdb/releases/v4.0.0/cellphone.db")
+    writeLines(lines_to_write, job_file)
+
+  }
+}
+
+```
+
+CellPhoneDB by site and cluster id: Generate matrix of counts, metadata and batch files
+```{r cellphonedb_site_cl_input_files, eval = FALSE}
+use_mouse <- "mouse_1"
+use_site <- "lung"
+    
+# Generate input files
+for( use_mouse in sce_cancer$mouse_id %>% unique) {
+  # Select shared sites in cancer and tme sets
+  cancer_sites <- colData(sce_cancer) %>% data.frame %>% filter(mouse_id == use_mouse) %>% collect %>% .[['site']] %>% unique
+  tme_sites <- colData(sce_tme) %>% data.frame %>% filter(mouse_id == use_mouse) %>% collect %>% .[['site']] %>% unique
+  use_sites <- intersect(cancer_sites, tme_sites)
+  use_site <- use_sites[1]
+  for (use_site in use_sites) {
+
+    # Subset of cancer cells
+    use_cols <-  sce_cancer$site == use_site & sce_cancer$mouse_id == use_mouse
+    # use_rows <- rownames(sce_cancer) %in% genes_receptors
+    use_sce_cancer <- sce_cancer[, use_cols]
+
+    # Subset of tme cells
+    use_cols <-  sce_tme$site == use_site & sce_tme$mouse_id == use_mouse
+    # use_rows <- rownames(sce_tme) %in% genes_ligands
+    use_sce_tme <- sce_tme[, use_cols]
+
+    # Mouse to Human orthologs
+    use_sce_cancer <- use_sce_cancer[mm_to_hs$Gene.name,]
+    rownames(use_sce_cancer) <- mm_to_hs$HGNC.symbol
+    use_sce_cancer <- use_sce_cancer[!duplicated(rownames(use_sce_cancer)),]
+
+    use_sce_tme <- use_sce_tme[mm_to_hs$Gene.name,]
+    rownames(use_sce_tme) <- mm_to_hs$HGNC.symbol
+    use_sce_tme <- use_sce_tme[!duplicated(rownames(use_sce_tme)),]
+
+    # Prepare metadata to combine
+    use_sce_cancer$Cell <- paste(use_sce_cancer$Sample, use_sce_cancer$Barcode, sep = '_')
+    use_sce_tme$Cell <- paste(use_sce_tme$Sample, use_sce_tme$Barcode, sep = '_')
+
+    use_sce_cancer$cluster_mnn  <- 'Cancer'
+
+    colData(use_sce_cancer) %<>% data.frame %>% dplyr::select(Cell, cluster_mnn) %>% DataFrame
+    colData(use_sce_tme) %<>% data.frame %>% dplyr::select(Cell, cluster_mnn) %>% DataFrame
+
+    # Remove reducedDims
+    reducedDims(use_sce_cancer) <- NULL
+    reducedDims(use_sce_tme) <- NULL
+    
+    # Combine sets
+    use_sce_bind <- cbind(use_sce_cancer, use_sce_tme)
+    rm(use_sce_cancer, use_sce_tme)
+
+    # Job file template
+    lines_to_write <- c(
+      "#!/bin/bash",
+      "ml purge; ml load gcc/6.3.0 python/3.8.5 r/4.1.3",
+      "source ./environments/cpdb/bin/activate",
+      "mkdir -p results",
+      NA,
+      "deactivate"
+    )
+    
+    #
+    # Files for ImmGen annotation
+    #
+    use_suffix <- 'cluster'
+    use_coldata_var <- 'cluster_mnn'
+    counts_file <- file.path(out_path, paste0(use_site,".",use_mouse,".", use_suffix, ".counts.txt"))
+    meta_file <- file.path(out_path, paste0(use_site,".",use_mouse,".", use_suffix,".meta.txt"))
+    project_name <- paste0(use_site,".",use_mouse,".",use_suffix)
+    job_file <- file.path(params$output_dir, 'CellPhoneDB', paste0(use_site,".",use_mouse,".", use_suffix, ".sh"))
+    
+    # Generate metadata files
+    use_meta <- colData(use_sce_bind) %>%
+      data.frame %>%
+      dplyr::select(any_of(c("Cell", use_coldata_var))) %>%
+      set_names(c("Cell", "cluster")) %>%
+      filter(!is.na(cluster))
+
+    # Remove cell types with less than 25 cells
+    ct_tab <- table(use_meta$cluster)
+    use_ct <- names(ct_tab)[ct_tab>=25]
+    use_meta <- use_meta %>% filter(cluster %in% use_ct)
+    write_tsv(use_meta, file = meta_file)
+
+    # Generate counts file
+    counts_mat <- counts(use_sce_bind) %>% as.matrix
+    colnames(counts_mat) <- use_sce_bind$Cell
+    counts_mat <- counts_mat[,use_meta$Cell]
+    counts_mat <- counts_mat %>% data.frame(check.names = FALSE) %>% rownames_to_column('Gene')
+    write_tsv(counts_mat, file = counts_file)
+    rm(counts_mat)
+
+    # Generate job file
+    lines_to_write[5] <- paste0("cellphonedb method statistical_analysis ./input_files/", basename(meta_file)," ./input_files/", basename(counts_file)," --counts-data=hgnc_symbol --threads=",params$ncores," --project-name=", project_name," --iterations=1000 --output-path=./results --database=~/.cpdb/releases/v4.0.0/cellphone.db")
+    writeLines(lines_to_write, job_file)
+
+  }
+}
+
+```
+
+
+CellPhoneDB by site, merging all tme cells into one cell type : Generate matrix of counts and metadata
+```{r cellphonedb_merged_input_files, eval = FALSE}
+use_mouse <- "mouse_1"
+use_site <- "lung"
+
+# Generate input files
+for( use_mouse in sce_cancer$mouse_id %>% unique) {
+  # Select shared sites in cancer and tme sets
+  cancer_sites <- colData(sce_cancer) %>% data.frame %>% filter(mouse_id == use_mouse) %>% collect %>% .[['site']] %>% unique
+  tme_sites <- colData(sce_tme) %>% data.frame %>% filter(mouse_id == use_mouse) %>% collect %>% .[['site']] %>% unique
+  use_sites <- intersect(cancer_sites, tme_sites)
+  use_site <- use_sites[1] 
+  for (use_site in use_sites) {
+    
+    # Subset of cancer cells
+    use_cols <-  sce_cancer$site == use_site & sce_cancer$mouse_id == use_mouse
+    # use_rows <- rownames(sce_cancer) %in% genes_receptors
+    use_sce_cancer <- sce_cancer[, use_cols]
+
+    # Subset of tme cells
+    use_cols <-  sce_tme$site == use_site & sce_tme$mouse_id == use_mouse
+    # use_rows <- rownames(sce_tme) %in% genes_ligands
+    use_sce_tme <- sce_tme[, use_cols]
+
+    # Mouse to Human orthologs
+    use_sce_cancer <- use_sce_cancer[mm_to_hs$Gene.name,]
+    rownames(use_sce_cancer) <- mm_to_hs$HGNC.symbol
+    use_sce_cancer <- use_sce_cancer[!duplicated(rownames(use_sce_cancer)),]
+
+    use_sce_tme <- use_sce_tme[mm_to_hs$Gene.name,]
+    rownames(use_sce_tme) <- mm_to_hs$HGNC.symbol
+    use_sce_tme <- use_sce_tme[!duplicated(rownames(use_sce_tme)),]
+
+
+    # Prepare metadata
+    use_sce_cancer$Cell <- paste(use_sce_cancer$Sample, use_sce_cancer$Barcode, sep = '_')
+    use_sce_tme$Cell <- paste(use_sce_tme$Sample, use_sce_tme$Barcode, sep = '_')
+
+    use_sce_cancer$cell_type <- 'Cancer'
+    use_sce_tme$cell_type <- 'TME'
+
+    colData(use_sce_cancer) <- colData(use_sce_cancer) %>% data.frame %>% dplyr::select(Cell, cell_type) %>% DataFrame
+    colData(use_sce_tme) <- colData(use_sce_tme) %>% data.frame %>% dplyr::select(Cell, cell_type) %>% DataFrame
+
+    # Remove reducedDims
+    reducedDims(use_sce_cancer) <- NULL
+    reducedDims(use_sce_tme) <- NULL
+    
+    # Combine sets
+    use_sce_bind <- cbind(use_sce_cancer, use_sce_tme)
+    rm(use_sce_cancer, use_sce_tme)
+
+    # Job file template
+    lines_to_write <- c(
+      "#!/bin/bash",
+      "ml purge; ml load gcc/6.3.0 python/3.8.5 r/4.1.3",
+      "source ./environments/cpdb/bin/activate",
+      "mkdir -p results",
+      NA,
+      "deactivate"
+    )
+    
+    #
+    #  Generate job files
+    #
+    use_suffix <- 'tme_merged'
+    use_coldata_var <- 'cell_type'
+    counts_file <- file.path(out_path, paste0(use_site,".",use_mouse,".", use_suffix, ".counts.txt"))
+    meta_file <- file.path(out_path, paste0(use_site,".",use_mouse,".", use_suffix,".meta.txt"))
+    project_name <- paste0(use_site,".",use_mouse,".",use_suffix)
+    job_file <- file.path(params$output_dir, 'CellPhoneDB', paste0(use_site,".",use_mouse,".", use_suffix, ".sh"))
+    
+    # Generate metadata files
+    use_meta <- colData(use_sce_bind) %>%
+      data.frame %>%
+      dplyr::select(any_of(c("Cell", use_coldata_var))) %>%
+      set_names(c("Cell", "cell_type")) %>%
+      filter(!is.na(cell_type))
+
+    # Remove cell types with less than 25 cells
+    ct_tab <- table(use_meta$cell_type)
+    use_ct <- names(ct_tab)[ct_tab>=25]
+    use_meta <- use_meta %>% filter(cell_type %in% use_ct)
+    write_tsv(use_meta, file = meta_file)
+
+    # Generate counts file
+    counts_mat <- counts(use_sce_bind) %>% as.matrix
+    colnames(counts_mat) <- use_sce_bind$Cell
+    counts_mat <- counts_mat[,use_meta$Cell]
+    counts_mat <- counts_mat %>% data.frame(check.names = FALSE) %>% rownames_to_column('Gene')
+    write_tsv(counts_mat, file = counts_file)
+    rm(counts_mat)
+
+    # Generate job file
+    lines_to_write[5] <- paste0("cellphonedb method statistical_analysis ./input_files/", basename(meta_file)," ./input_files/", basename(counts_file)," --counts-data=hgnc_symbol --threads=",params$ncores," --project-name=", project_name," --iterations=1000 --output-path=./results --database=~/.cpdb/releases/v4.0.0/cellphone.db")
+    writeLines(lines_to_write, job_file)
+
+    
+  }
+}
+
+```
+
+### Run CellPhoneDB
+
+CellPhoneDB was run in different settings, merging all the TME cells or separating TME cells by cell type annotated using **ImmGen atlas** . To adapt CellPhoneDb to mouse we had to convert mouse gene names into human gene names using orthologs annotation from Ensembl.
+
+Note: Running in the cluster
+```{bash CellPhoneDB-run, eval = FALSE}
+pushd ./output/p26532_o28268/p26532_o28268-10x_rnaseq-pll-lr-hq-cellphonedb/CellPhoneDB
+for i in $(ls *.sh); do
+  PREFIX=$(echo $i | sed 's/.sh//')
+  # bsub -W 24:00 -n params$ncores -R  "rusage[mem=4096]" -J cellphonedb.$PREFIX -o ${PREFIX}.out -e ${PREFIX}.err < $i
+  sbatch -n 12 --time=24:00:00 --mem-per-cpu=4096 -J $PREFIX.cellphone -o ${PREFIX}.out -e ${PREFIX}.err < $i
+done
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
+### Select specific interactions
+```{r cellphonedb-selected-interactions}
+selected_interacting_pair <- c(
+  'Acvr1_Bmpr2_Bmp6',
+  'Bmpr1a_Bmpr2_Bmp6',
+  'Bmpr1a_Bmpr2_Bmp2',
+  
+  'Tnfrsf1a_Grn',
+  'Tnfrsf1b_Grn',
+  'Ide_Ccl9',  # Ccl9 and Ccl6 are othologous for CCL23
+  'Ide_Ccl6',
+  
+  'Grn_Tnfrsf1a',
+  'Grn_Tnfrsf1b',
+  'Ccl9_Ide',  # Ccl9 and Ccl6 are othologous for CCL23
+  'Ccl6_Ide'
+  )
+
+# selected_interacting_pair <- c('Ccl9_Ide', 'Ccl6_Ide', 'Acvr1_Bmpr2_Bmp6',
+#                                'Bmpr1a_Bmpr2_Bmp6', 'Bmpr1a_Bmpr2_Bmp6',
+#                                'Bmpr1a_Bmpr2_Bmp2', 'Grn_Tnfrsf1b',
+#                                'Grn_Egfr', 'Grn_Tnfrsf1a'
+#                                )
+                               
+# grep('Ccl9_Ide', cpd_merged$interacting_pair, ignore.case = T, value = T) %>% unique
+# grep('Ccl6_Ide', cpd_merged$interacting_pair, ignore.case = T, value = T) %>% unique
+# grep('Acvr1_Bmpr2_Bmp6', cpd_merged$interacting_pair, ignore.case = T, value = T) %>% unique
+# grep('Bmpr1a_Bmpr2_Bmp6', cpd_merged$interacting_pair, ignore.case = T, value = T) %>% unique
+# grep('Bmpr1a_Bmpr2_Bmp2', cpd_merged$interacting_pair, ignore.case = T, value = T) %>% unique
+# grep('Grn_Tnfrsf1b', cpd_merged$interacting_pair, ignore.case = T, value = T) %>% unique
+# grep('Grn_Egfr', cpd_merged$interacting_pair, ignore.case = T, value = T) %>% unique
+# grep('Grn_Tnfrsf1a', cpd_merged$interacting_pair, ignore.case = T, value = T) %>% unique
+```
+
+## Cytokine-receptor interaction
+
+Loading results files. File forma description could be found in the following [link](https://www.nature.com/articles/s41596-020-0292-x/tables/2).
+
+```{r cellphonedb-tme_merged-build-data, eval = FALSE}
+res_path <- file.path(params$output_dir, 'CellPhoneDB/results')
+res_folders <- list.files(res_path, pattern = '.*tme_merged')
+i <- res_folders[[1]]
+
+# Calculate stats
+cpd_merged <- foreach(i=res_folders, .combine = rbind) %do% {
+  site <- strsplit(i, "\\.") %>% map(1) %>% unlist()
+  mouse <- strsplit(i, "\\.") %>% map(2) %>% unlist()
+
+  # Load data
+  pvalues_tab <- read_tsv(file.path(res_path, i, 'pvalues.txt'))
+  means_tab <- read_tsv(file.path(res_path, i, 'means.txt'))
+  sigmeans_tab <- read_tsv(file.path(res_path, i, 'significant_means.txt'))
+  
+  # Pvalues : Filter cytokine genes in receptor == FALSE
+  pvalues_tab_a <- pvalues_tab %>% 
+    filter((gene_a %in% cytokines_symbol_hs) & !receptor_a) %>% 
+    dplyr::rename(pvalue = `TME|Cancer`, ligand = gene_a, receptor = gene_b) %>% 
+    dplyr::select(id_cp_interaction, interacting_pair, ligand, receptor, is_integrin, pvalue)
+  pvalues_tab_b <- pvalues_tab %>% 
+    filter((gene_b %in% cytokines_symbol_hs) & !receptor_b) %>% 
+    dplyr::rename(pvalue = `Cancer|TME`, ligand = gene_b, receptor = gene_a) %>% 
+    dplyr::select(id_cp_interaction, interacting_pair, ligand, receptor, is_integrin, pvalue)
+  pvalues_mod <- rbind(pvalues_tab_a, pvalues_tab_b)
+
+  # Means : Filter cytokine genes in receptor == FALSE
+  means_tab_a <- means_tab %>% 
+    filter((gene_a %in% cytokines_symbol_hs) & !receptor_a) %>% 
+    dplyr::rename(mean = `TME|Cancer`, ligand = gene_a, receptor = gene_b) %>% 
+    dplyr::select(id_cp_interaction, interacting_pair, ligand, receptor, is_integrin, mean)
+  means_tab_b <- means_tab %>% 
+    filter((gene_b %in% cytokines_symbol_hs) & !receptor_b) %>% 
+    dplyr::rename(mean = `Cancer|TME`, ligand = gene_b, receptor = gene_a) %>% 
+    dplyr::select(id_cp_interaction, interacting_pair, ligand, receptor, is_integrin, mean)
+  means_mod <- rbind(means_tab_a, means_tab_b)
+ 
+  # Sig Means : Filter cytokine genes in receptor == FALSE
+  sigmeans_tab_a <- sigmeans_tab %>% 
+    filter((gene_a %in% cytokines_symbol_hs) & !receptor_a) %>% 
+    dplyr::rename(sigmean = `TME|Cancer`, ligand = gene_a, receptor = gene_b) %>% 
+    dplyr::select(id_cp_interaction, interacting_pair, ligand, receptor, is_integrin, rank, sigmean)
+  sigmeans_tab_b <- sigmeans_tab %>% 
+    filter((gene_b %in% cytokines_symbol_hs) & !receptor_b) %>% 
+    dplyr::rename(sigmean = `Cancer|TME`, ligand = gene_b, receptor = gene_a) %>% 
+    dplyr::select(id_cp_interaction, interacting_pair, ligand, receptor, is_integrin, rank, sigmean)
+  sigmeans_mod <- rbind(sigmeans_tab_a, sigmeans_tab_b)
+  
+  full_join(means_mod,sigmeans_mod ) %>% 
+    left_join(pvalues_mod) %>% 
+    mutate(
+      sigmean = !is.na(sigmean),
+      site = site,
+      mouse = mouse
+    )
+} 
+
+# Add additional variables 
+cpd_merged %<>% 
+  mutate(
+    site = ifelse(site == 'liver', 'Liver', site),
+    site = ifelse(site == 'lung', 'Lung', site),
+    site = ifelse(site == 'primary_tumor', 'Primary tumor', site),
+    mouse = gsub("mouse_", "", mouse),
+    site_mouse = paste(site, mouse, sep = '_'),
+    pvalue = ifelse(pvalue==0, 0.0009, pvalue)
+  )
+
+# Add normalized scores by lr
+cpd_merged <- foreach(i = unique(cpd_merged$interacting_pair), .combine = rbind) %do% {
+  cpd_merged %>%
+    filter(interacting_pair == i) %>%
+    mutate(mean_norm = normalize01(mean))
+}
+
+
+# Extract gene names to convert into MM. In some cases, receptor == NA mostly 
+# because is a complex. In those cases we try to extract the gene names from
+# the interacting pair
+use_gene_names <- c(
+  cpd_merged$ligand,
+  cpd_merged$receptor,
+  map(cpd_merged$interacting_pair, \(x) strsplit(x, "_") %>% unlist) %>% 
+    unlist
+) %>% 
+  na.omit %>% 
+  unique
+
+# Add MM to HS orthologs
+library(biomaRt)
+mart_human <- useMart("ensembl", dataset = "hsapiens_gene_ensembl", host = "https://dec2021.archive.ensembl.org/") 
+mart_mouse <- useMart("ensembl", dataset = "mmusculus_gene_ensembl", host = "https://dec2021.archive.ensembl.org/")
+hs_to_mm <- getLDS(
+  attributes = c("external_gene_name"), 
+  filters = "external_gene_name", 
+  values = use_gene_names,
+  mart = mart_human, 
+  attributesL = c("mgi_symbol"), 
+  martL = mart_mouse
+)
+
+# Add orthologous info if receptor is != NA
+cpd_merged %<>% 
+  dplyr::rename(
+    ligand.hs = ligand,
+    receptor.hs = receptor,
+    interacting_pair.hs = interacting_pair
+  ) %>%
+  left_join(hs_to_mm, by = c('ligand.hs' = 'Gene.name')) %>% 
+  dplyr::rename(ligand = MGI.symbol) %>% 
+  left_join(hs_to_mm, by = c('receptor.hs' = 'Gene.name')) %>% 
+  dplyr::rename(receptor = MGI.symbol) %>% 
+  mutate(interacting_pair = paste(ligand, receptor, sep = '_'))
+
+
+  
+# Add orthologous info if receptor is == NA
+ip_na <- cpd_merged %>% data.frame %>% 
+  filter(is.na(receptor)) %>% 
+  pull( interacting_pair.hs) %>% 
+  unique
+
+ip_to_mm <- foreach (i = ip_na) %do% {
+  ist <- i %>% strsplit("_") %>% unlist
+  jc <- foreach(j = ist) %do% {
+    if(j %in% hs_to_mm$Gene.name) {
+      hs_to_mm %>% filter(Gene.name == j) %>% pull(MGI.symbol) %>% head(1)
+    } else {
+      j
+    }
+  }
+  unlist(jc) %>% paste(collapse = "_")
+}
+
+ip_trans <- data.frame(original_ip = ip_na, new_ip = unlist(ip_to_mm))
+cpd_merged %<>% 
+  left_join(ip_trans, by = c('interacting_pair.hs' = 'original_ip')) %>% 
+  mutate(interacting_pair = ifelse(!is.na(new_ip), new_ip, interacting_pair)) %>% 
+  dplyr::select(-new_ip)
+
+
+# Selection of final variables
+cpd_merged %<>% dplyr::select(-contains('.hs'), -id_cp_interaction) %>% 
+  dplyr::select(interacting_pair, everything()) %>% 
+  unique %>% 
+  data.frame
+
+
+saveRDS(cpd_merged, file = file.path(params$output_dir, 'tme_merged-cpdb.rds'))
+```
+
+```{r cellphonedb-tme_merged-ll-ttest, eval = FALSE}
+# One sided T-test
+iscore_ll_ttest <- foreach(i = unique(cpd_merged$interacting_pair), .combine = rbind) %do% {
+  x <- cpd_merged %>% filter(site %in% c('Lung', 'Liver')) %>% filter(interacting_pair == i)
+  
+  iscore_liver <- x %>% filter(site == 'Liver') %>% pull(mean)
+  iscore_lung <- x %>% filter(site == 'Lung') %>% pull(mean)
+  
+  # Add 0 to missing data  
+  if(length(iscore_liver) < 3)
+    iscore_liver <- c(iscore_liver, rep(0, 3-length(iscore_liver)))
+  if(length(iscore_lung) < 3)
+    iscore_lung <- c(iscore_lung, rep(0, 3-length(iscore_lung)))
+  
+  x_fc <- log2(mean(iscore_lung)/mean(iscore_liver))
+  
+  if(length(x_fc) >0 & !is.na(x_fc)) {
+    if(x_fc < 0)
+      t.res <-try(t.test(iscore_liver, iscore_lung, alternative = 'greater'), silent = TRUE)
+    if(x_fc > 0)
+      t.res <-try(t.test(iscore_liver, iscore_lung, alternative = 'less'), silent = TRUE)
+    if(class(t.res) != 'try-error') {
+      data.frame(lr = i, p=t.res$p.value, 
+                 m_liver = t.res$estimate['mean of x'], 
+                 m_lung = t.res$estimate['mean of y'], 
+                 t = t.res$statistic, logFC = x_fc)
+    } else {
+      data.frame(lr = i, p=NA, m_liver = NA, m_lung = NA, t=NA, logFC=NA)
+    }
+  } else {
+    data.frame(lr = i, p=NA, m_liver = NA, m_lung = NA, t=NA, logFC=NA)
+  }
+}
+saveRDS(iscore_ll_ttest, file = file.path(params$output_dir, 'tme_merged-cpdb-ll-ttest.rds'))
+```
+
+```{r cellphonedb-tme_merged-load}
+cpd_merged <- readRDS(file = file.path(params$output_dir, 
+                                       'tme_merged-cpdb.rds')) %>% 
+  mutate(site = factor(site, site_caps_ord))
+
+iscore_ll_ttest <- readRDS(file = file.path(params$output_dir, 
+                                            'tme_merged-cpdb-ll-ttest.rds'))
+  
+```
+
+### Table of Results
+
+#### CPdb results
+In this table we are showing results for interactions involving cytokine ligands in the TME and receptors in the cancer populations. List of cytokine genes was obtained from GO (GO:0005125) cytokine activity ([definition](http://www.informatics.jax.org/vocab/gene_ontology/GO:0005125).
+
+Main column description : 
+
+
+  - mean : mean value refers to the total mean of the individual partner average expression values in the corresponding interacting pairs of cell types. If one of the mean values is 0, then the total mean is set to 0
+  
+  
+  - pvalue : P value refers to the enrichment of the interacting ligand–receptor pair in each of the interacting pairs of cell types
+  
+  -sigmean: Significant mean calculation for all the interacting partners. If p.value < 0.05, the value will be the mean. Alternatively, the value is set to 0
+  
+
+```{r cellphonedb-tme_merged-table}
+cpd_merged %>% 
+  dplyr::select(-rank, -site_mouse) %>% 
+  datatable(., 
+            rownames = TRUE, 
+            filter = 'top', 
+            caption = 'Cytokine-receptor interactions by mouse and site',
+            extensions = 'Buttons', 
+            options = list(
+              dom = 'Blfrtip',
+              buttons = c('csv', 'excel')
+            ))
+```
+
+#### T-test stats
+```{r cellphonedb-tme_merged-ll-ttest-table}
+iscore_ll_ttest %>% 
+  filter(!is.na(p)) %>% 
+  datatable(., 
+            rownames = FALSE, 
+            filter = 'top', 
+            caption = 'One-sided T-test between lung and liver. LogFC representes the ratio of average score in lung over liver',
+            extensions = 'Buttons', 
+            options = list(
+              dom = 'Blfrtip',
+              buttons = c('csv', 'excel')
+              )) %>% 
+  formatSignif(c('p', 'm_liver', 'm_lung')) %>% 
+  formatRound(c('t', 'logFC'))
+```
+
+
+### Dot plot
+
+Plot showing meand and pvalues for all the interaction pairs (y-axis) that are significant (P<=0.05) in at least one of the samples (x-axis). Rows are clustering based on means values using euclidean distance and complete method for agglomeration. Each column represent a mouse replicate. 
+
+Plot inspired from [CellPhoneDb dotplot code](https://github.com/Teichlab/cellphonedb/blob/master/cellphonedb/src/plotters/R/plot_dot_by_column_name.R).
+
+```{r cellphonedb-tme_merged-dotplot-conf}
+# Select interactions
+sig_interactions <- cpd_merged %>% 
+  filter(sigmean) %>% collect %>% .[['interacting_pair']] %>% unique
+
+# Cluster interactions
+mat_means <- cpd_merged %>% 
+  filter(interacting_pair %in% sig_interactions) %>% 
+  dplyr::select(site_mouse, interacting_pair, mean) %>% 
+  pivot_wider(names_from = site_mouse, values_from = mean) %>% 
+  column_to_rownames('interacting_pair')
+means_interaction_hclust <- hclust(dist(mat_means))
+interaction_labels_hclust <- means_interaction_hclust$labels[means_interaction_hclust$order]
+
+
+# Large plot
+use_data_plot <- cpd_merged %>% 
+  filter(interacting_pair %in% sig_interactions) %>% 
+  mutate(
+    interacting_pair = factor(interacting_pair, levels = interaction_labels_hclust),
+  ) 
+
+plot_iscore <- use_data_plot %>% 
+  ggplot(aes(mouse, interacting_pair, size = mean, color = -log10(pvalue))) +
+    geom_point() +
+    # geom_point(data = use_data_plot %>% filter(pvalue <= 0.05), 
+               # pch = 21, color = 'black', stroke = 1) +
+    # geom_point(data = use_data_plot %>% filter(pvalue > 0.05), 
+               # pch = 21, color = 'grey70', stroke = 1, show.legend = FALSE) +
+    # scale_color_distiller(palette = "BuPu", na.value = "grey70", direction = 1) +
+    scale_color_viridis_c(na.value = "grey70") +
+    facet_grid(~site, scales = 'free_x') +
+    labs(
+      y = '', 
+      x = 'Mouse replicate',
+      size = 'Mean',
+      color = bquote("-log"[10] ~ .(paste0("(P-value)")))
+    ) +
+    theme(
+      panel.border = element_rect(color = "black", fill = NA, linewidth = 1),
+      axis.line = element_blank(),
+      # axis.text.x=element_blank(),
+      axis.ticks.x=element_blank(),
+      axis.line.x = element_blank(),
+      panel.grid.major.y = element_line(linewidth = 0.2, colour="grey60", linetype = 'dashed'),
+      # panel.grid.major.x = element_line(linewidth = 0.2, colour="grey60", linetype = 'dashed'),
+      strip.background = element_blank()#,
+      # strip.text.y = element_blank()
+      )
+
+# Plot wit selected interactions
+use_data_plot_selected <- use_data_plot %>% 
+  filter(interacting_pair %in% selected_interacting_pair) %>% 
+  mutate(site = recode_factor(site, 'Primary tumor' = 'Primary\ntumor'))
+plot_iscore_selected <- use_data_plot_selected %>% 
+  ggplot(aes(mouse, interacting_pair, size = mean, color = -log10(pvalue))) +
+    geom_point() +
+    # geom_point(data = use_data_plot_selected %>% filter(pvalue <= 0.05), 
+               # pch = 21, color = 'black', stroke = 1) +
+    # geom_point(data = use_data_plot_selected %>% filter(pvalue > 0.05), 
+               # pch = 21, color = 'grey70', stroke = 1, show.legend = FALSE) +
+    # scale_color_distiller(palette = "BuPu", na.value = "grey70", direction = 1) +
+    scale_color_viridis_c(na.value = "grey70") +
+    facet_grid(~site, scales = 'free_x') +
+    labs(
+      y = '', 
+      x = 'Mouse replicate',
+      size = 'Mean',
+      color = bquote("-log"[10] ~ .(paste0("(P-value)")))
+    ) +
+    theme(
+      panel.border = element_rect(color = "black", fill = NA, linewidth = 1),
+      axis.line = element_blank(),
+      # axis.text.x=element_blank(),
+      axis.ticks.x=element_blank(),
+      axis.line.x = element_blank(),
+      panel.grid.major.y = element_line(linewidth = 0.2, colour="grey60", linetype = 'dashed'),
+      # panel.grid.major.x = element_line(linewidth = 0.2, colour="grey60", linetype = 'dashed'),
+      strip.background = element_blank()#,
+      # strip.text.y = element_blank()
+      )
+
+```
+
+
+#### Simple
+```{r cellphonedb-tme_merged-dotplot-simple, fig.width=7.2, fig.asp= 1.2}
+print(plot_iscore)
+```
+
+#### Additional T-test panel
+```{r cellphonedb-tme_merged-dotplot-pval, fig.width=7.2, fig.asp= 1.2}
+plot_iscore_legend <- cowplot::get_legend(plot_iscore)
+
+plot_p <- iscore_ll_ttest %>% 
+  filter(lr %in% use_data_plot$interacting_pair) %>% 
+  mutate(lr = factor(lr, levels = levels(use_data_plot$interacting_pair))) %>% 
+  ggplot(aes(x=-log10(p), y = lr)) +
+  geom_col(fill = 'grey70') +
+  scale_x_continuous(expand = c(0, 0)) +
+  theme(
+    axis.text.y = element_blank(),
+    axis.ticks.y = element_blank(),
+    axis.line.y = element_blank()
+  ) +
+  labs(
+    y = NULL, 
+    x = bquote("-log"[10] ~ .(paste0("(P-value)")))
+  )
+
+plot_grid(
+  plot_iscore + guides(color = "none", size = "none"), 
+  plot_p, 
+  plot_iscore_legend,
+  align = "h", 
+  axis= "tb",
+  nrow = 1, 
+  rel_widths = c(1, 0.3, 0.2))
+```
+
+#### Additional FC panel
+```{r cellphonedb-tme_merged-dotplot-fc, fig.width=7.2, fig.asp= 1.2}
+plot_iscore_legend <- cowplot::get_legend(plot_iscore)
+
+use_data_fc <- iscore_ll_ttest %>% 
+  filter(lr %in% use_data_plot$interacting_pair) %>% 
+  mutate(lr = factor(lr, levels = levels(use_data_plot$interacting_pair)))
+x_max <- use_data_fc$logFC %>% abs %>% max
+
+plot_fc <- use_data_fc %>% 
+  ggplot(aes(x=logFC, y = lr)) +
+  geom_col(fill = 'grey70') +
+  scale_x_continuous(expand = c(0, 0), limits = c(-x_max, x_max)) +
+  theme(
+    axis.text.y = element_blank(),
+    axis.ticks.y = element_blank(),
+    axis.line.y = element_blank()
+  ) +
+  labs(
+    y = NULL, 
+    x = bquote("-log"[2] ~ .(paste0("(fold-change)")))
+  )
+
+plot_grid(
+  plot_iscore + guides(color = "none", size = "none"), 
+  plot_fc, 
+  plot_iscore_legend,
+  align = "h", 
+  axis= "tb",
+  nrow = 1, 
+  rel_widths = c(1, 0.3, 0.2))
+```
+
+#### Selected interactions - Simple
+```{r cellphonedb-tme_merged-dotplot-sel-simple, fig.width=5.2, fig.asp= 0.5}
+print(plot_iscore_selected)
+```
+
+#### Selected interactions - Additional T-test panel
+```{r cellphonedb-tme_merged-dotplot-sel-pval, fig.width=5.2, fig.asp= 0.5}
+plot_iscore_legend <- cowplot::get_legend(plot_iscore_selected)
+
+plot_p <- iscore_ll_ttest %>% 
+  filter(lr %in% use_data_plot_selected$interacting_pair) %>% 
+  mutate(lr = factor(lr, levels = levels(use_data_plot_selected$interacting_pair))) %>% 
+  ggplot(aes(x=-log10(p), y = lr)) +
+  geom_col(fill = 'grey70') +
+  scale_x_continuous(expand = c(0, 0)) +
+  theme(
+    axis.text.y = element_blank(),
+    axis.ticks.y = element_blank(),
+    axis.line.y = element_blank()
+  ) +
+  labs(
+    y = NULL, 
+    x = bquote("-log"[10] ~ .(paste0("(P-value)")))
+  )
+
+plot_grid(
+  plot_iscore_selected + guides(color = "none", size = "none"), 
+  plot_p, 
+  plot_iscore_legend,
+  align = "h", 
+  axis= "tb",
+  nrow = 1, 
+  rel_widths = c(1, 0.3, 0.2))
+```
+
+#### Selected interactions - Additional FC panel
+```{r cellphonedb-tme_merged-dotplot-sel-fc, fig.width=5.2, fig.asp= 0.5}
+plot_iscore_legend <- cowplot::get_legend(plot_iscore_selected)
+
+use_data_fc <- iscore_ll_ttest %>% 
+  filter(lr %in% use_data_plot_selected$interacting_pair) %>% 
+  mutate(lr = factor(lr, levels = levels(use_data_plot_selected$interacting_pair)))
+x_max <- use_data_fc$logFC %>% abs %>% max
+
+plot_fc <- use_data_fc %>% 
+  ggplot(aes(x=logFC, y = lr)) +
+  geom_col(fill = 'grey70') +
+  scale_x_continuous(expand = c(0, 0), limits = c(-x_max, x_max)) +
+  theme(
+    axis.text.y = element_blank(),
+    axis.ticks.y = element_blank(),
+    axis.line.y = element_blank()
+  ) +
+  labs(
+    y = NULL, 
+    x = bquote("-log"[2] ~ .(paste0("(fold-change)")))
+  )
+
+plot_grid(
+  plot_iscore_selected + guides(color = "none", size = "none"), 
+  plot_fc, 
+  plot_iscore_legend,
+  align = "h", 
+  axis= "tb",
+  nrow = 1, 
+  rel_widths = c(1, 0.3, 0.2))
+```
+
+
+
+
+### Dot plot iscore-color
+
+Plot showing meand and pvalues for all the interaction pairs (y-axis) that are significant (P<=0.05) in at least one of the samples (x-axis). Rows are clustering based on means values using euclidean distance and complete method for agglomeration. Each column represent a mouse replicate. 
+
+Plot inspired from [CellPhoneDb dotplot code](https://github.com/Teichlab/cellphonedb/blob/master/cellphonedb/src/plotters/R/plot_dot_by_column_name.R).
+
+```{r cellphonedb-tme_merged-dotplot-2-conf}
+# Select interactions
+sig_interactions <- cpd_merged %>% 
+  filter(sigmean) %>% collect %>% .[['interacting_pair']] %>% unique
+
+# Cluster interactions
+mat_means <- cpd_merged %>% 
+  filter(interacting_pair %in% sig_interactions) %>% 
+  dplyr::select(site_mouse, interacting_pair, mean) %>% 
+  pivot_wider(names_from = site_mouse, values_from = mean) %>% 
+  column_to_rownames('interacting_pair')
+means_interaction_hclust <- hclust(dist(mat_means))
+interaction_labels_hclust <- means_interaction_hclust$labels[means_interaction_hclust$order]
+
+
+# Large plot
+use_data_plot <- cpd_merged %>% 
+  filter(interacting_pair %in% sig_interactions) %>% 
+  mutate(
+    interacting_pair = factor(interacting_pair, levels = interaction_labels_hclust),
+  )
+
+plot_iscore <- use_data_plot %>% 
+  # ggplot(aes(mouse, interacting_pair, size = mean, color = -log10(pvalue))) +
+  ggplot(aes(mouse, interacting_pair, color = mean, size = -log10(pvalue))) +
+    geom_point() +
+    # geom_point(data = use_data_plot %>% filter(pvalue <= 0.05), 
+               # pch = 21, color = 'black', stroke = 1) +
+    # geom_point(data = use_data_plot %>% filter(pvalue > 0.05), 
+               # pch = 21, color = 'grey70', stroke = 1, show.legend = FALSE) +
+    scale_size(range = c(0.1, 4)) +
+    scale_color_distiller(palette = "Purples", na.value = "grey70", direction = 1) +
+    # scale_color_distiller(palette = "BuPu", na.value = "grey70", direction = 1)  +
+    # scale_color_viridis_c(na.value = "grey70") +
+    # scale_color_viridis_log10scaled +
+    facet_grid(~site, scales = 'free_x') +
+    labs(
+      y = '', 
+      x = 'Mouse replicate',
+      color = 'Mean',
+      size = bquote("-log"[10] ~ .(paste0("(P-value)")))
+    ) +
+    theme(
+      panel.border = element_rect(color = "black", fill = NA, linewidth = 1),
+      axis.line = element_blank(),
+      # axis.text.x=element_blank(),
+      axis.ticks.x=element_blank(),
+      axis.line.x = element_blank(),
+      panel.grid.major.y = element_line(linewidth = 0.2, colour="grey60", linetype = 'dashed'),
+      # panel.grid.major.x = element_line(linewidth = 0.2, colour="grey60", linetype = 'dashed'),
+      strip.background = element_blank()#,
+      # strip.text.y = element_blank()
+      )
+
+# Plot wit selected interactions
+use_data_plot_selected <- use_data_plot %>% 
+  filter(interacting_pair %in% selected_interacting_pair) %>% 
+  mutate(site = recode_factor(site, 'Primary tumor' = 'Primary\ntumor'))
+plot_iscore_selected <- use_data_plot_selected %>% 
+  ggplot(aes(mouse, interacting_pair, color = mean, size = -log10(pvalue))) +
+    geom_point() +
+    # geom_point(data = use_data_plot_selected %>% filter(pvalue <= 0.05), 
+               # pch = 21, color = 'black', stroke = 1) +
+    # geom_point(data = use_data_plot_selected %>% filter(pvalue > 0.05), 
+               # pch = 21, color = 'grey70', stroke = 1, show.legend = FALSE) +
+    scale_color_distiller(palette = "Purples", na.value = "grey70", direction = 1) +
+    # scale_color_distiller(palette = "BuPu", na.value = "grey70", direction = 1)  +
+    # scale_color_viridis_c(na.value = "grey70") +
+    # scale_color_viridis_log10scaled +
+    facet_grid(~site, scales = 'free_x') +
+    labs(
+      y = '', 
+      x = 'Mouse replicate',
+      color = 'Mean',
+      size = bquote("-log"[10] ~ .(paste0("(P-value)")))
+    ) +
+    theme(
+      panel.border = element_rect(color = "black", fill = NA, linewidth = 1),
+      axis.line = element_blank(),
+      # axis.text.x=element_blank(),
+      axis.ticks.x=element_blank(),
+      axis.line.x = element_blank(),
+      panel.grid.major.y = element_line(linewidth = 0.2, colour="grey60", linetype = 'dashed'),
+      # panel.grid.major.x = element_line(linewidth = 0.2, colour="grey60", linetype = 'dashed'),
+      strip.background = element_blank()#,
+      # strip.text.y = element_blank()
+      )
+
+
+
+# Plot showing means for selected interactions
+use_data_plot_selected_mean <- use_data_plot %>% 
+  filter(interacting_pair %in% selected_interacting_pair) %>% 
+  group_by(interacting_pair, site) %>% 
+  summarise(mmedian = median(mean)) %>% 
+  mutate(site = recode_factor(site, 'Primary tumor' = 'Primary\ntumor'))
+plot_iscore_selected_mean <- use_data_plot_selected_mean %>% 
+  ggplot(aes(site, interacting_pair, size = mmedian, color = mmedian)) +
+    geom_point() +
+    scale_color_distiller(palette = "Purples", na.value = "grey70", direction = 1) +
+    # scale_color_distiller(palette = "BuPu", na.value = "grey70", direction = 1) +
+    # scale_color_viridis_c(na.value = "grey70") +
+    # scale_color_viridis_log10scaled +
+    scale_size(range=c(0.4, 4.5)) +
+    labs(
+      y = '', 
+      x = '',
+      size = 'Median\nmean',
+      color = 'Median\nmean'
+    ) +
+    theme(
+      panel.border = element_rect(color = "black", fill = NA, linewidth = 1),
+      axis.line = element_blank(),
+      # axis.text.x=element_blank(),
+      axis.ticks.x=element_blank(),
+      axis.line.x = element_blank(),
+      panel.grid.major.y = element_line(linewidth = 0.2, colour="grey60", linetype = 'dashed'),
+      # panel.grid.major.x = element_line(linewidth = 0.2, colour="grey60", linetype = 'dashed'),
+      strip.background = element_blank()#,
+      # strip.text.y = element_blank()
+      )
+```
+
+
+#### Simple
+```{r cellphonedb-tme_merged-dotplot-2-simple, fig.width=7.2, fig.asp= 1.2}
+print(plot_iscore)
+```
+
+#### Additional T-test panel
+```{r cellphonedb-tme_merged-dotplot-2-pval, fig.width=7.2, fig.asp= 1.2}
+plot_iscore_legend <- cowplot::get_legend(plot_iscore)
+
+plot_p <- iscore_ll_ttest %>% 
+  filter(lr %in% use_data_plot$interacting_pair) %>% 
+  mutate(lr = factor(lr, levels = levels(use_data_plot$interacting_pair))) %>% 
+  ggplot(aes(x=-log10(p), y = lr)) +
+  geom_col(fill = 'grey70') +
+  scale_x_continuous(expand = c(0, 0)) +
+  theme(
+    axis.text.y = element_blank(),
+    axis.ticks.y = element_blank(),
+    axis.line.y = element_blank()
+  ) +
+  labs(
+    y = NULL, 
+    x = bquote("-log"[10] ~ .(paste0("(P-value)")))
+  )
+
+plot_grid(
+  plot_iscore + guides(color = "none", size = "none"), 
+  plot_p, 
+  plot_iscore_legend,
+  align = "h", 
+  axis= "tb",
+  nrow = 1, 
+  rel_widths = c(1, 0.3, 0.2))
+```
+
+#### Additional FC panel
+```{r cellphonedb-tme_merged-dotplot-2-fc, fig.width=7.2, fig.asp= 1.2}
+plot_iscore_legend <- cowplot::get_legend(plot_iscore)
+
+use_data_fc <- iscore_ll_ttest %>% 
+  filter(lr %in% use_data_plot$interacting_pair) %>% 
+  mutate(lr = factor(lr, levels = levels(use_data_plot$interacting_pair)))
+x_max <- use_data_fc$logFC %>% abs %>% max
+
+plot_fc <- use_data_fc %>% 
+  ggplot(aes(x=logFC, y = lr)) +
+  geom_col(fill = 'grey70') +
+  scale_x_continuous(expand = c(0, 0), limits = c(-x_max, x_max)) +
+  theme(
+    axis.text.y = element_blank(),
+    axis.ticks.y = element_blank(),
+    axis.line.y = element_blank()
+  ) +
+  labs(
+    y = NULL, 
+    x = bquote("-log"[2] ~ .(paste0("(fold-change)")))
+  )
+
+plot_grid(
+  plot_iscore + guides(color = "none", size = "none"), 
+  plot_fc, 
+  plot_iscore_legend,
+  align = "h", 
+  axis= "tb",
+  nrow = 1, 
+  rel_widths = c(1, 0.3, 0.2))
+```
+
+#### Selected interactions - Simple
+```{r cellphonedb-tme_merged-dotplot-2-sel-simple, fig.width=5.2, fig.asp= 0.5}
+print(plot_iscore_selected)
+```
+
+#### Selected interactions - Additional T-test panel
+```{r cellphonedb-tme_merged-dotplot-2-sel-pval, fig.width=5.2, fig.asp= 0.5}
+plot_iscore_legend <- cowplot::get_legend(plot_iscore_selected)
+
+plot_p <- iscore_ll_ttest %>% 
+  filter(lr %in% use_data_plot_selected$interacting_pair) %>% 
+  mutate(lr = factor(lr, levels = levels(use_data_plot_selected$interacting_pair))) %>% 
+  ggplot(aes(x=-log10(p), y = lr)) +
+  geom_col(fill = 'grey70') +
+  scale_x_continuous(expand = c(0, 0)) +
+  theme(
+    axis.text.y = element_blank(),
+    axis.ticks.y = element_blank(),
+    axis.line.y = element_blank()
+  ) +
+  labs(
+    y = NULL, 
+    x = bquote("-log"[10] ~ .(paste0("(P-value)")))
+  )
+
+plot_grid(
+  plot_iscore_selected + guides(color = "none", size = "none"), 
+  plot_p, 
+  plot_iscore_legend,
+  align = "h", 
+  axis= "tb",
+  nrow = 1, 
+  rel_widths = c(1, 0.3, 0.2))
+```
+
+#### Selected interactions - Additional FC panel
+```{r cellphonedb-tme_merged-dotplot-2-sel-fc, fig.width=5.2, fig.asp= 0.5}
+plot_iscore_legend <- cowplot::get_legend(plot_iscore_selected)
+
+use_data_fc <- iscore_ll_ttest %>% 
+  filter(lr %in% use_data_plot_selected$interacting_pair) %>% 
+  mutate(lr = factor(lr, levels = levels(use_data_plot_selected$interacting_pair)))
+x_max <- use_data_fc$logFC %>% abs %>% max
+
+plot_fc <- use_data_fc %>% 
+  ggplot(aes(x=logFC, y = lr)) +
+  geom_col(fill = 'grey70') +
+  scale_x_continuous(expand = c(0, 0), limits = c(-x_max, x_max)) +
+  theme(
+    axis.text.y = element_blank(),
+    axis.ticks.y = element_blank(),
+    axis.line.y = element_blank()
+  ) +
+  labs(
+    y = NULL, 
+    x = bquote("-log"[2] ~ .(paste0("(fold-change)")))
+  )
+
+plot_grid(
+  plot_iscore_selected + guides(color = "none", size = "none"), 
+  plot_fc, 
+  plot_iscore_legend,
+  align = "h", 
+  axis= "tb",
+  nrow = 1, 
+  rel_widths = c(1, 0.3, 0.2))
+```
+
+#### Median values of selected interactions - Simple
+```{r cellphonedb-tme_merged-dotplot-2-sel-median-simple, fig.width= 3}
+print(plot_iscore_selected_mean)
+```
+
+#### Median values of selected interactions - Additional T-test panel
+```{r cellphonedb-tme_merged-dotplot-2-sel-median-pval, fig.width=5.2, fig.asp= 0.5}
+plot_iscore_legend <- cowplot::get_legend(plot_iscore_selected_mean)
+
+plot_p <- iscore_ll_ttest %>% 
+  filter(lr %in% use_data_plot_selected_mean$interacting_pair) %>% 
+  mutate(lr = factor(lr, levels = levels(use_data_plot_selected_mean$interacting_pair))) %>% 
+  ggplot(aes(x=-log10(p), y = lr)) +
+  geom_col(fill = 'grey70') +
+  scale_x_continuous(expand = c(0, 0)) +
+  theme(
+    axis.text.y = element_blank(),
+    axis.ticks.y = element_blank(),
+    axis.line.y = element_blank()
+  ) +
+  labs(
+    y = NULL, 
+    x = bquote("-log"[10] ~ .(paste0("(P-value)")))
+  )
+
+plot_grid(
+  plot_iscore_selected_mean + guides(color = "none", size = "none"), 
+  plot_p, 
+  plot_iscore_legend,
+  align = "h", 
+  axis= "tb",
+  nrow = 1, 
+  rel_widths = c(1, 0.5, 0.3))
+```
+
+#### Median values of selected interactions - Additional FC panel
+```{r cellphonedb-tme_merged-dotplot-2-sel-median-fc, fig.width=5.2, fig.asp= 0.5}
+plot_iscore_legend <- cowplot::get_legend(plot_iscore_selected_mean)
+
+use_data_fc <- iscore_ll_ttest %>% 
+  filter(lr %in% use_data_plot_selected_mean$interacting_pair) %>% 
+  mutate(lr = factor(lr, levels = levels(use_data_plot_selected_mean$interacting_pair)))
+x_max <- use_data_fc$logFC %>% abs %>% max
+
+plot_fc <- use_data_fc %>% 
+  ggplot(aes(x=logFC, y = lr)) +
+  geom_col(fill = 'grey70') +
+  scale_x_continuous(expand = c(0, 0), limits = c(-x_max, x_max)) +
+  theme(
+    axis.text.y = element_blank(),
+    axis.ticks.y = element_blank(),
+    axis.line.y = element_blank()
+  ) +
+  labs(
+    y = NULL, 
+    x = bquote("-log"[2] ~ .(paste0("(fold-change)")))
+  )
+
+plot_grid(
+  plot_iscore_selected_mean + guides(color = "none", size = "none"), 
+  plot_fc, 
+  plot_iscore_legend,
+  align = "h", 
+  axis= "tb",
+  nrow = 1, 
+  rel_widths = c(1, 0.5, 0.3))
+```
+
+
+
+
+
+### Stripchart
+```{r cellphonedb-tme_merged-stripchart, fig.width=5.2, fig.asp= 1}
+# Select interactions
+sig_interactions <- cpd_merged %>% 
+  filter(sigmean) %>% collect %>% .[['interacting_pair']] %>% unique
+
+use_data <- cpd_merged %>% 
+  filter(interacting_pair %in% sig_interactions)
+
+# Manual P-values
+lr_y_pos <- use_data %>% 
+  group_by(interacting_pair) %>% 
+  summarise(y.max = max(mean)) %>% 
+  mutate(y.position = y.max + (0.10*y.max))
+
+use_test <- iscore_ll_ttest %>% filter(lr %in% sig_interactions) %>% 
+  mutate(
+    group1 = 'Liver',
+    group2 = 'Lung',
+    groups =  list(c('Liver', 'Lung')),
+    xmin = 1,
+    xmax = 2,
+    p = format.pval(p, digits = 1)
+  ) %>% 
+  left_join(lr_y_pos, by = c('lr' = 'interacting_pair')) %>% 
+  dplyr::rename(interacting_pair = lr) %>% 
+  filter(p<=0.05)
+
+
+use_data %>% 
+  filter(interacting_pair %in% use_test$interacting_pair) %>% 
+  ggplot(aes(site, mean)) +
+  geom_boxplot(alpha = 0.4, color = 'black', aes(fill = site), show.legend = FALSE, size = 0.25, fatten = 1) +
+  geom_quasirandom(method="smiley", width = 0.1, alpha = 1, size = 2, shape = 21, color = 'black', aes(fill = site), stroke = 0.4) +
+  # stat_compare_means(comparisons = list(c("Liver", "Lung")), method = 't.test') +
+  stat_pvalue_manual(use_test,  label = "p = {p}", vjust = -0.5, label.size = geom_text_size) +
+  # scale_fill_OkabeIto() +
+  # scale_color_OkabeIto() +
+  scale_fill_manual(values = site_palette) +
+  scale_color_manual(values = site_palette) +
+  scale_y_continuous(expand = c(0.05, 0, 0.35, 0)) +
+  scale_x_discrete(expand = c(0, 0.5)) +
+  facet_wrap(vars(interacting_pair), scales = 'free_y', ncol = 3) +
+  theme(
+    # axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1)
+    axis.text.x=element_blank(),
+    axis.ticks.x=element_blank(),
+    panel.border = element_rect(colour = "black", size=0.5),
+    axis.line = element_blank(),
+    strip.background = element_blank()
+  ) +
+  guides(fill = guide_legend(override.aes = list(size = 3))) +
+  labs(
+    fill = NULL, 
+    x = NULL,
+    y = 'Interaction score',
+    caption = 'One-sided T-test P value'
+  )
+
+```
+
+### Stripchart - Selected interactions
+```{r cellphonedb-tme_merged-sel-stripchart, fig.width=5.2, fig.asp= 0.7}
+# Select interactions
+sig_interactions <- selected_interacting_pair
+
+use_data <- cpd_merged %>% 
+  filter(interacting_pair %in% sig_interactions)
+
+# Manual P-values
+lr_y_pos <- use_data %>% 
+  group_by(interacting_pair) %>% 
+  summarise(y.max = max(mean)) %>% 
+  mutate(y.position = y.max + (0.10*y.max))
+
+use_test <- iscore_ll_ttest %>% filter(lr %in% sig_interactions) %>% 
+  mutate(
+    group1 = 'Liver',
+    group2 = 'Lung',
+    groups =  list(c('Liver', 'Lung')),
+    xmin = 1,
+    xmax = 2,
+    p = format.pval(p, digits = 1)
+  ) %>% 
+  left_join(lr_y_pos, by = c('lr' = 'interacting_pair')) %>% 
+  dplyr::rename(interacting_pair = lr) %>% 
+  filter(p<=0.05)
+
+
+use_data %>% 
+  filter(interacting_pair %in% use_test$interacting_pair) %>% 
+  ggplot(aes(site, mean)) +
+  geom_boxplot(alpha = 0.4, color = 'black', aes(fill = site), show.legend = FALSE, size = 0.25, fatten = 1) +
+  geom_quasirandom(method="smiley", width = 0.1, alpha = 1, size = 2, shape = 21, color = 'black', aes(fill = site), stroke = 0.4) +
+  # stat_compare_means(comparisons = list(c("Liver", "Lung")), method = 't.test') +
+  stat_pvalue_manual(use_test,  label = "p = {p}", vjust = -0.5, label.size = geom_text_size) +
+  # scale_fill_OkabeIto() +
+  # scale_color_OkabeIto() +
+  scale_fill_manual(values = site_palette) +
+  scale_color_manual(values = site_palette) +
+  scale_y_continuous(expand = c(0.05, 0, 0.35, 0)) +
+  scale_x_discrete(expand = c(0, 0.5)) +
+  facet_wrap(vars(interacting_pair), scales = 'free_y', ncol = 3) +
+  theme(
+    # axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1)
+    axis.text.x=element_blank(),
+    axis.ticks.x=element_blank(),
+    panel.border = element_rect(colour = "black", size=0.5),
+    axis.line = element_blank(),
+    strip.background = element_blank()
+  ) +
+  guides(fill = guide_legend(override.aes = list(size = 3))) +
+  labs(
+    fill = NULL, 
+    x = NULL,
+    y = 'Interaction score',
+    caption = 'One-sided T-test P value'
+  )
+
+```
+
+
+
+
+
+## Cytokine-receptor interaction by cell type
+
+Loading results files. File forma description could be found in the following [link](https://www.nature.com/articles/s41596-020-0292-x/tables/2).
+
+```{r cellphonedb-site-type-build-data, eval = FALSE}
+res_path <- file.path(params$output_dir, 'CellPhoneDB/results')
+res_folders <- list.files(res_path, pattern = '(bone|brain|liver|lung|ovary|primary_tumor).*(immgen)')
+i <- res_folders[[1]]
+
+# Calculate stats
+cpd_merged <- foreach(i=res_folders, .combine = rbind) %do% {
+  site <- strsplit(i, "\\.") %>% map(1) %>% unlist()
+  mouse <- strsplit(i, "\\.") %>% map(2) %>% unlist()
+  celltype_src <- strsplit(i, "\\.") %>% map(3) %>% unlist()
+  
+  # Load data
+  pvalues_tab <- read_tsv(file.path(res_path, i, 'pvalues.txt'))
+  means_tab <- read_tsv(file.path(res_path, i, 'means.txt'))
+  sigmeans_tab <- read_tsv(file.path(res_path, i, 'significant_means.txt'))
+  
+  # Pvalues : Filter cytokine genes in receptor == FALSE
+  pvalues_tab_a <- pvalues_tab %>% 
+    filter((gene_a %in% cytokines_symbol_hs) & !receptor_a) %>% 
+    dplyr::rename(ligand = gene_b, receptor = gene_a) %>% 
+    dplyr::select(id_cp_interaction, interacting_pair, ligand, receptor, is_integrin, ends_with('Cancer')) %>% 
+    pivot_longer(cols = ends_with('Cancer'), names_to = "interacting_partner", values_to = "pvalue") %>% 
+    mutate(interacting_partner = gsub("\\|.*", "", interacting_partner))
+  
+  pvalues_tab_b <- pvalues_tab %>% 
+    filter((gene_b %in% cytokines_symbol_hs) & !receptor_b) %>% 
+    dplyr::rename(ligand = gene_a, receptor = gene_b) %>% 
+    dplyr::select(id_cp_interaction, interacting_pair, ligand, receptor, is_integrin, starts_with('Cancer')) %>% 
+    pivot_longer(cols = starts_with('Cancer'), names_to = "interacting_partner", values_to = "pvalue") %>% 
+    mutate(interacting_partner = gsub(".*\\|", "", interacting_partner))   
+
+  pvalues_mod <- rbind(pvalues_tab_a, pvalues_tab_b)
+  
+  # Means : Filter cytokine genes in receptor == FALSE
+  means_tab_a <- means_tab %>% 
+    filter((gene_a %in% cytokines_symbol_hs) & !receptor_a) %>% 
+    dplyr::rename(ligand = gene_b, receptor = gene_a) %>% 
+    dplyr::select(id_cp_interaction, interacting_pair, ligand, receptor, is_integrin, ends_with('Cancer')) %>% 
+    pivot_longer(cols = ends_with('Cancer'), names_to = "interacting_partner", values_to = "mean") %>% 
+    mutate(interacting_partner = gsub("\\|.*", "", interacting_partner))
+  
+  means_tab_b <- means_tab %>% 
+    filter((gene_b %in% cytokines_symbol_hs) & !receptor_b) %>% 
+    dplyr::rename(ligand = gene_a, receptor = gene_b) %>% 
+    dplyr::select(id_cp_interaction, interacting_pair, ligand, receptor, is_integrin, starts_with('Cancer')) %>% 
+    pivot_longer(cols = starts_with('Cancer'), names_to = "interacting_partner", values_to = "mean") %>% 
+    mutate(interacting_partner = gsub(".*\\|", "", interacting_partner))   
+  
+  means_mod <- rbind(means_tab_a, means_tab_b)
+ 
+  # Sig Means : Filter cytokine genes in receptor == FALSE
+  sigmeans_tab_a <- sigmeans_tab %>% 
+    filter((gene_a %in% cytokines_symbol_hs) & !receptor_a) %>% 
+    dplyr::rename(ligand = gene_b, receptor = gene_a) %>% 
+    dplyr::select(id_cp_interaction, interacting_pair, ligand, receptor, is_integrin, ends_with('Cancer')) %>% 
+    pivot_longer(cols = ends_with('Cancer'), names_to = "interacting_partner", values_to = "sigmean") %>% 
+    mutate(interacting_partner = gsub("\\|.*", "", interacting_partner))
+  
+  sigmeans_tab_b <- sigmeans_tab %>% 
+    filter((gene_b %in% cytokines_symbol_hs) & !receptor_b) %>% 
+    dplyr::rename(ligand = gene_a, receptor = gene_b) %>% 
+    dplyr::select(id_cp_interaction, interacting_pair, ligand, receptor, is_integrin, starts_with('Cancer')) %>% 
+    pivot_longer(cols = starts_with('Cancer'), names_to = "interacting_partner", values_to = "sigmean") %>% 
+    mutate(interacting_partner = gsub(".*\\|", "", interacting_partner))   
+  
+   sigmeans_mod <- rbind(sigmeans_tab_a, sigmeans_tab_b)
+  
+  
+  
+  full_join(means_mod,sigmeans_mod ) %>% 
+    left_join(pvalues_mod) %>% 
+    mutate(
+      sigmean = !is.na(sigmean),
+      site = site,
+      mouse = mouse,
+      celltype_src = celltype_src
+    )
+}
+
+# Add additional variables 
+cpd_merged %<>% 
+  mutate(
+    site = ifelse(site == 'liver', 'Liver', site),
+    site = ifelse(site == 'lung', 'Lung', site),
+    site = ifelse(site == 'primary_tumor', 'Primary tumor', site),
+    mouse = gsub("mouse_", "", mouse),
+    site_mouse = paste(site, mouse, sep = '_'),
+    site_mouse_celltype = paste(site, mouse, interacting_partner,sep = '_'),
+    pvalue = ifelse(pvalue==0, 0.0009, pvalue),
+    ip_celltype = paste(interacting_pair, interacting_partner,sep = '_')
+  ) 
+
+# Add normalized scores by lr and cell type
+cpd_merged <- foreach(i = unique(cpd_merged$ip_celltype), .combine = rbind) %do% {
+  cpd_merged %>%
+    filter(ip_celltype == i) %>%
+    mutate(mean_norm = normalize01(mean))
+}
+
+# Extract gene names to convert into MM. In some cases, receptor == NA mostly 
+# because is a complex. In those cases we try to extract the gene names from
+# the interacting pair
+use_gene_names <- c(
+  cpd_merged$ligand,
+  cpd_merged$receptor,
+  map(cpd_merged$interacting_pair, \(x) strsplit(x, "_") %>% unlist) %>% 
+    unlist
+) %>% 
+  na.omit %>% 
+  unique
+
+# Add MM to HS orthologs
+library(biomaRt)
+mart_human <- useMart("ensembl", dataset = "hsapiens_gene_ensembl", host = "https://dec2021.archive.ensembl.org/") 
+mart_mouse <- useMart("ensembl", dataset = "mmusculus_gene_ensembl", host = "https://dec2021.archive.ensembl.org/")
+hs_to_mm <- getLDS(
+  attributes = c("external_gene_name"), 
+  filters = "external_gene_name", 
+  values = use_gene_names,
+  mart = mart_human, 
+  attributesL = c("mgi_symbol"), 
+  martL = mart_mouse
+)
+
+# Add orthologous info if receptor is != NA
+cpd_merged %<>% 
+  dplyr::rename(
+    ligand.hs = ligand,
+    receptor.hs = receptor,
+    interacting_pair.hs = interacting_pair
+  ) %>%
+  left_join(hs_to_mm, by = c('ligand.hs' = 'Gene.name')) %>% 
+  dplyr::rename(ligand = MGI.symbol) %>% 
+  left_join(hs_to_mm, by = c('receptor.hs' = 'Gene.name')) %>% 
+  dplyr::rename(receptor = MGI.symbol) %>% 
+  mutate(interacting_pair = paste(ligand, receptor, sep = '_'))
+
+
+  
+# Add orthologous info if receptor is == NA
+ip_na <- cpd_merged %>% data.frame %>% 
+  filter(is.na(receptor) | is.na(ligand)) %>% 
+  pull( interacting_pair.hs) %>% 
+  unique
+
+ip_to_mm <- foreach (i = ip_na) %do% {
+  ist <- i %>% strsplit("_") %>% unlist
+  jc <- foreach(j = ist) %do% {
+    if(j %in% hs_to_mm$Gene.name) {
+      hs_to_mm %>% filter(Gene.name == j) %>% pull(MGI.symbol) %>% head(1)
+    } else {
+      j
+    }
+  }
+  unlist(jc) %>% paste(collapse = "_")
+}
+
+ip_trans <- data.frame(original_ip = ip_na, new_ip = unlist(ip_to_mm))
+cpd_merged %<>% 
+  left_join(ip_trans, by = c('interacting_pair.hs' = 'original_ip')) %>% 
+  mutate(interacting_pair = ifelse(!is.na(new_ip), new_ip, interacting_pair)) %>% 
+  dplyr::select(-new_ip)
+
+
+# Selection of final variables
+cpd_merged %<>% dplyr::select(-contains('.hs'), -id_cp_interaction) %>% 
+  dplyr::select(interacting_pair, everything()) %>% 
+  unique %>% 
+  data.frame
+
+
+saveRDS(cpd_merged, file = file.path(params$output_dir, 'site_type-cpdb.rds'))
+
+```
+
+```{r cellphonedb-site-type-load}
+cpd_merged <- readRDS(file = file.path(params$output_dir, 'site_type-cpdb.rds')) %>% 
+  mutate(site = factor(site, site_caps_ord))
+```
+
+### Table of Results
+
+In this table we are showing results for interactions involving cytokine ligands in TME and receptors in the cancer populations. The analysis is done for each pair of cell type by mpuse and site. List of cytokine genes was obtained from GO (GO:0005125) cytokine activity ([definition](http://www.informatics.jax.org/vocab/gene_ontology/GO:0005125).
+
+Main column description : 
+
+  - mean : mean value refers to the total mean of the individual partner average expression values in the corresponding interacting pairs of cell types. If one of the mean values is 0, then the total mean is set to 0
+  
+  - pvalue : P value refers to the enrichment of the interacting ligand–receptor pair in each of the interacting pairs of cell types
+  
+  -sigmean: Significant mean calculation for all the interacting partners. If p.value < 0.05, the value will be the mean. Alternatively, the value is set to 0
+
+
+```{r cellphonedb-site-type-table}
+rmd_file <- current_input()
+if(is.null(rmd_file))
+  rmd_file <- 'tmp'
+file_immgen_xlsx <- file.path('./docs/file',rmd_file, 'cellphonedb-site_type-immgen-tables.xlsx')
+
+dir.create(dirname(file_immgen_xlsx), recursive = TRUE, showWarnings = FALSE)
+
+# Save Mouse RNA-seq Atlas tables
+wb <- createWorkbook()
+use_data <- cpd_merged %>% mutate(interacting_pair = factor(interacting_pair))
+for(celltype in levels(use_data$interacting_partner)){
+  if(nchar(celltype) > 31)
+    celltype <- paste0(substr(celltype, 1, 30), ".")
+  addWorksheet(wb, celltype)
+  writeData(wb,celltype,  use_data %>% filter(interacting_partner == celltype))
+}
+saveWorkbook(wb, file_immgen_xlsx, TRUE)
+rm(wb)
+```
+
+The tables of results can be downloaded using the following links for cell types based on [ImmGen](`r gsub("docs/", "" , file_immgen_xlsx)`).
+
+
+### Dot plots
+
+Plot showing meand and pvalues for all the interaction pairs (y-axis) that are significant (P<=0.05) in at least one of the samples (x-axis). Rows are clustering based on means values using euclidean distance and complete method for agglomeration. Each column represent a mouse replicate. 
+
+Plot inspired from [CellPhoneDb dotplot code](https://github.com/Teichlab/cellphonedb/blob/master/cellphonedb/src/plotters/R/plot_dot_by_column_name.R).
+
+```{r cellphonedb-site-type-dotplot-conf}
+use_data <- cpd_merged %>% 
+  filter(celltype_src == "immgen") %>% 
+  mutate(i_id_cp_interaction = paste(interacting_partner, interacting_pair, sep = '-'))
+
+# Select interactions
+# sig_interactions <- use_data %>% 
+#   filter(sigmean) %>% collect %>% .[['id_cp_interaction']] %>% unique
+
+sig_interactions_ct <- foreach(i=unique(use_data$interacting_partner), .combine = c) %do% {
+  use_data %>% 
+    filter(interacting_partner == i) %>% 
+    filter(sigmean) %>% 
+    mutate(i_id_cp_interaction = paste(interacting_partner, interacting_pair, sep = '-')) %>% 
+    pull(i_id_cp_interaction) %>% 
+    unique
+}
+
+# Cluster interactions
+mat_means <- use_data %>% 
+  filter(i_id_cp_interaction %in% sig_interactions_ct) %>% 
+  group_by(site_mouse_celltype, interacting_pair) %>% 
+  summarise(mean = mean(mean)) %>% 
+  pivot_wider(names_from = site_mouse_celltype, values_from = mean) %>% 
+  column_to_rownames('interacting_pair')
+ 
+mat_means[is.na(mat_means)] <- 0
+means_interaction_hclust <- hclust(dist(mat_means))
+interaction_labels_hclust <- means_interaction_hclust$labels[means_interaction_hclust$order]
+
+
+use_data_to_plot <- use_data %>%
+  mutate(site = gsub("_", "\n", site)) %>%
+  mutate(interacting_partner = gsub(" ", "\n", interacting_partner)) %>%
+  filter(i_id_cp_interaction %in% sig_interactions_ct) %>%
+  filter(mean >= 2) %>%
+  mutate(interacting_pair = factor(interacting_pair, levels = interaction_labels_hclust))
+```
+
+
+#### Colored by P-value
+```{r cellphonedb-site-type-dotplot, fig.width=5.2, fig.asp= 1.2}
+use_data_to_plot %>% 
+  ggplot(aes(mouse, interacting_pair, size = mean, color = -log10(pvalue))) +
+    geom_point() +
+    # geom_point(data = use_data_to_plot %>% filter(pvalue < 0.05),
+               # pch = 21, color = 'black', stroke = 1) +
+    # geom_point(data = use_data_to_plot %>% filter(pvalue > 0.05), 
+             # pch = 21, color = 'grey70', stroke = 1, show.legend = FALSE) +
+    # scale_color_distiller(palette = "BuPu", na.value = "grey70", direction = 1) +
+    scale_color_viridis_c(na.value = "grey70") +
+    facet_grid(interacting_partner~site, scales = 'free', space = 'free') +
+    labs(
+      y = '', 
+      x = 'Mouse replicate',
+      size = 'Mean',
+      color = bquote("-log"[10] ~ .(paste0("(P-value)"))),
+      caption = 'Showing interaction pairs with P≤0.05 and log2 Mean ≥ 2'
+    ) +
+    theme(
+      panel.border = element_rect(color = "black", fill = NA, linewidth = 1),
+      axis.line = element_blank(),
+      # axis.text.x=element_blank(),
+      axis.ticks.x=element_blank(),
+      axis.line.x = element_blank(),
+      panel.grid.major.y = element_line(linewidth = 0.2, colour="grey60", linetype = 'dashed'),
+      # panel.grid.major.x = element_line(linewidth = 0.2, colour="grey60", linetype = 'dashed'),
+      strip.background = element_blank()#,
+      # strip.text.y = element_blank()
+      )
+
+```
+
+
+#### Colored by score
+```{r cellphonedb-site-type-dotplot2, fig.width=5.2, fig.asp= 1.2}
+use_data_to_plot %>% 
+  # ggplot(aes(mouse, interacting_pair, size = mean, color = -log10(pvalue))) +
+  ggplot(aes(mouse, interacting_pair, color = mean, size = -log10(pvalue))) +
+    geom_point() +
+    # geom_point(data = use_data_to_plot %>% filter(pvalue < 0.05),
+               # pch = 21, color = 'black', stroke = 1) +
+    # geom_point(data = use_data_to_plot %>% filter(pvalue > 0.05), 
+             # pch = 21, color = 'grey70', stroke = 1, show.legend = FALSE) +
+    # scale_color_distiller(palette = "BuPu", na.value = "grey70", direction = 1) +
+    scale_color_viridis_log10scaled +
+    facet_grid(interacting_partner~site, scales = 'free', space = 'free') +
+    labs(
+      y = '', 
+      x = 'Mouse replicate',
+      color = 'Mean',
+      size = bquote("-log"[10] ~ .(paste0("(P-value)"))),
+      caption = 'Showing interaction pairs with P≤0.05 and log2 Mean ≥ 2'
+    ) +
+    theme(
+      panel.border = element_rect(color = "black", fill = NA, linewidth = 1),
+      axis.line = element_blank(),
+      # axis.text.x=element_blank(),
+      axis.ticks.x=element_blank(),
+      axis.line.x = element_blank(),
+      panel.grid.major.y = element_line(linewidth = 0.2, colour="grey60", linetype = 'dashed'),
+      # panel.grid.major.x = element_line(linewidth = 0.2, colour="grey60", linetype = 'dashed'),
+      strip.background = element_blank()#,
+      # strip.text.y = element_blank()
+      )
+```
+
+
+#### Selected interactions - Colored by P-value
+```{r cellphonedb-site-type-dotplot-selected, fig.width=5.2, fig.asp= 0.8}
+use_data %>%
+  mutate(site = gsub("_", "\n", site)) %>%
+  mutate(interacting_partner = gsub(" ", "\n", interacting_partner)) %>%
+  filter(i_id_cp_interaction %in% sig_interactions_ct) %>% 
+  filter(interacting_pair %in% selected_interacting_pair) %>% 
+  ggplot(aes(mouse, interacting_pair, size = mean, color = -log10(pvalue))) +
+    geom_point() +
+    # geom_point(data = use_data_to_plot %>% filter(pvalue < 0.05),
+               # pch = 21, color = 'black', stroke = 1) +
+    # geom_point(data = use_data_to_plot %>% filter(pvalue > 0.05), 
+             # pch = 21, color = 'grey70', stroke = 1, show.legend = FALSE) +
+    # scale_color_distiller(palette = "BuPu", na.value = "grey70", direction = 1) +
+    scale_color_viridis_c(na.value = "grey70") +
+    facet_grid(interacting_partner~site, scales = 'free', space = 'free') +
+    labs(
+      y = '', 
+      x = 'Mouse replicate',
+      size = 'Mean',
+      color = bquote("-log"[10] ~ .(paste0("(P-value)"))),
+      caption = 'Showing interaction pairs with P≤0.05 and log2 Mean ≥ 2'
+    ) +
+    theme(
+      panel.border = element_rect(color = "black", fill = NA, linewidth = 1),
+      axis.line = element_blank(),
+      # axis.text.x=element_blank(),
+      axis.ticks.x=element_blank(),
+      axis.line.x = element_blank(),
+      panel.grid.major.y = element_line(linewidth = 0.2, colour="grey60", linetype = 'dashed'),
+      # panel.grid.major.x = element_line(linewidth = 0.2, colour="grey60", linetype = 'dashed'),
+      strip.background = element_blank()#,
+      # strip.text.y = element_blank()
+      )
+
+```
+
+
+#### Selected interactions - Colored by score
+```{r cellphonedb-site-type-dotplot2t-selected, fig.width=5.2, fig.asp= 0.8}
+use_data %>%
+  mutate(site = gsub("_", "\n", site)) %>%
+  mutate(interacting_partner = gsub(" ", "\n", interacting_partner)) %>%
+  filter(i_id_cp_interaction %in% sig_interactions_ct) %>% 
+  filter(interacting_pair %in% selected_interacting_pair) %>% 
+  # ggplot(aes(mouse, interacting_pair, size = mean, color = -log10(pvalue))) +
+  ggplot(aes(mouse, interacting_pair, color = mean, size = -log10(pvalue))) +
+    geom_point() +
+    # geom_point(data = use_data_to_plot %>% filter(pvalue < 0.05),
+               # pch = 21, color = 'black', stroke = 1) +
+    # geom_point(data = use_data_to_plot %>% filter(pvalue > 0.05), 
+             # pch = 21, color = 'grey70', stroke = 1, show.legend = FALSE) +
+    # scale_color_distiller(palette = "BuPu", na.value = "grey70", direction = 1) +
+    scale_color_viridis_log10scaled +
+    facet_grid(interacting_partner~site, scales = 'free', space = 'free') +
+    labs(
+      y = '', 
+      x = 'Mouse replicate',
+      color = 'Mean',
+      size = bquote("-log"[10] ~ .(paste0("(P-value)"))),
+      caption = 'Showing interaction pairs with P≤0.05 and log2 Mean ≥ 2'
+    ) +
+    theme(
+      panel.border = element_rect(color = "black", fill = NA, linewidth = 1),
+      axis.line = element_blank(),
+      # axis.text.x=element_blank(),
+      axis.ticks.x=element_blank(),
+      axis.line.x = element_blank(),
+      panel.grid.major.y = element_line(linewidth = 0.2, colour="grey60", linetype = 'dashed'),
+      # panel.grid.major.x = element_line(linewidth = 0.2, colour="grey60", linetype = 'dashed'),
+      strip.background = element_blank()#,
+      # strip.text.y = element_blank()
+      )
+```
+
+
+
+### Dot plots: no P filter
+
+Plot showing meand and pvalues for all the interaction pairs (y-axis). Rows are clustering based on means values using euclidean distance and complete method for agglomeration. Each column represent a mouse replicate. 
+
+Plot inspired from [CellPhoneDb dotplot code](https://github.com/Teichlab/cellphonedb/blob/master/cellphonedb/src/plotters/R/plot_dot_by_column_name.R).
+
+```{r cellphonedb-site-type-dotplot-all-conf}
+use_data <- cpd_merged %>% 
+  filter(celltype_src == "immgen") %>% 
+  mutate(i_id_cp_interaction = paste(interacting_partner, interacting_pair, sep = '-'))
+
+# Select interactions
+# sig_interactions <- use_data %>% 
+#   filter(sigmean) %>% collect %>% .[['id_cp_interaction']] %>% unique
+
+sig_interactions_ct <- foreach(i=unique(use_data$interacting_partner), .combine = c) %do% {
+  use_data %>% 
+    filter(interacting_partner == i) %>% 
+    # filter(sigmean) %>% 
+    mutate(i_id_cp_interaction = paste(interacting_partner, interacting_pair, sep = '-')) %>% 
+    pull(i_id_cp_interaction) %>% 
+    unique
+}
+
+# Cluster interactions
+mat_means <- use_data %>% 
+  filter(i_id_cp_interaction %in% sig_interactions_ct) %>% 
+  group_by(site_mouse_celltype, interacting_pair) %>% 
+  summarise(mean = mean(mean)) %>% 
+  pivot_wider(names_from = site_mouse_celltype, values_from = mean) %>% 
+  column_to_rownames('interacting_pair')
+ 
+mat_means[is.na(mat_means)] <- 0
+means_interaction_hclust <- hclust(dist(mat_means))
+interaction_labels_hclust <- means_interaction_hclust$labels[means_interaction_hclust$order]
+
+
+use_data_to_plot <- use_data %>%
+  mutate(site = gsub("_", "\n", site)) %>%
+  mutate(interacting_partner = gsub(" ", "\n", interacting_partner)) %>%
+  filter(i_id_cp_interaction %in% sig_interactions_ct) %>%
+  filter(mean >= 2) %>%
+  mutate(interacting_pair = factor(interacting_pair, levels = interaction_labels_hclust))
+```
+
+
+#### Selected interactions - Colored by P-value
+```{r cellphonedb-site-type-dotplot-all-selected, fig.width=5.2, fig.asp= 1.4}
+use_data %>%
+  mutate(site = gsub("_", "\n", site)) %>%
+  mutate(interacting_partner = gsub(" ", "\n", interacting_partner)) %>%
+  filter(i_id_cp_interaction %in% sig_interactions_ct) %>% 
+  filter(interacting_pair %in% selected_interacting_pair) %>% 
+  ggplot(aes(mouse, interacting_pair, size = mean, color = -log10(pvalue))) +
+    geom_point() +
+    # geom_point(data = use_data_to_plot %>% filter(pvalue < 0.05),
+               # pch = 21, color = 'black', stroke = 1) +
+    # geom_point(data = use_data_to_plot %>% filter(pvalue > 0.05), 
+             # pch = 21, color = 'grey70', stroke = 1, show.legend = FALSE) +
+    # scale_color_distiller(palette = "BuPu", na.value = "grey70", direction = 1) +
+    scale_color_viridis_c(na.value = "grey70") +
+    facet_grid(interacting_partner~site, scales = 'free', space = 'free') +
+    labs(
+      y = '', 
+      x = 'Mouse replicate',
+      size = 'Mean',
+      color = bquote("-log"[10] ~ .(paste0("(P-value)"))),
+      caption = 'Showing interaction pairs with P≤0.05 and log2 Mean ≥ 2'
+    ) +
+    theme(
+      panel.border = element_rect(color = "black", fill = NA, linewidth = 1),
+      axis.line = element_blank(),
+      # axis.text.x=element_blank(),
+      axis.ticks.x=element_blank(),
+      axis.line.x = element_blank(),
+      panel.grid.major.y = element_line(linewidth = 0.2, colour="grey60", linetype = 'dashed'),
+      # panel.grid.major.x = element_line(linewidth = 0.2, colour="grey60", linetype = 'dashed'),
+      strip.background = element_blank()#,
+      # strip.text.y = element_blank()
+      )
+
+```
+
+
+#### Selected interactions - Colored by score
+```{r cellphonedb-site-type-dotplot2-all-selected, fig.width=5.2, fig.asp= 1.4}
+use_data %>%
+  mutate(site = gsub("_", "\n", site)) %>%
+  mutate(interacting_partner = gsub(" ", "\n", interacting_partner)) %>%
+  filter(i_id_cp_interaction %in% sig_interactions_ct) %>% 
+  filter(interacting_pair %in% selected_interacting_pair) %>% 
+  # ggplot(aes(mouse, interacting_pair, size = mean, color = -log10(pvalue))) +
+  ggplot(aes(mouse, interacting_pair, color = mean, size = -log10(pvalue))) +
+    geom_point() +
+    # geom_point(data = use_data_to_plot %>% filter(pvalue < 0.05),
+               # pch = 21, color = 'black', stroke = 1) +
+    # geom_point(data = use_data_to_plot %>% filter(pvalue > 0.05), 
+             # pch = 21, color = 'grey70', stroke = 1, show.legend = FALSE) +
+    # scale_color_distiller(palette = "BuPu", na.value = "grey70", direction = 1) +
+    scale_color_viridis_log10scaled +
+    facet_grid(interacting_partner~site, scales = 'free', space = 'free') +
+    labs(
+      y = '', 
+      x = 'Mouse replicate',
+      color = 'Mean',
+      size = bquote("-log"[10] ~ .(paste0("(P-value)"))),
+      caption = 'Showing interaction pairs with P≤0.05 and log2 Mean ≥ 2'
+    ) +
+    theme(
+      panel.border = element_rect(color = "black", fill = NA, linewidth = 1),
+      axis.line = element_blank(),
+      # axis.text.x=element_blank(),
+      axis.ticks.x=element_blank(),
+      axis.line.x = element_blank(),
+      panel.grid.major.y = element_line(linewidth = 0.2, colour="grey60", linetype = 'dashed'),
+      # panel.grid.major.x = element_line(linewidth = 0.2, colour="grey60", linetype = 'dashed'),
+      strip.background = element_blank()#,
+      # strip.text.y = element_blank()
+      )
+```
+
+
+
+### Dot plots all cell types
+```{r cellphonedb-site-all_types-dotplot-conf}
+use_data <- cpd_merged %>% 
+  filter(celltype_src == "immgen") %>% 
+  mutate(i_id_cp_interaction = paste(interacting_partner, interacting_pair, sep = '-')) %>% 
+  group_by(interacting_pair, interacting_partner, site) %>% 
+  summarise(mmedian = median(mean))
+
+use_data_to_plot <- use_data %>%
+  mutate(site = gsub("_", "\n", site)) %>%
+  mutate(interacting_partner = gsub(" ", "\n", interacting_partner)) %>%
+  filter(interacting_pair %in% selected_interacting_pair) 
+
+# Add empty levels
+ipartner_levels <- unique(use_data_to_plot$interacting_partner)
+site_levels <- unique(use_data_to_plot$site)
+
+new_data <- foreach(ipair = unique(use_data_to_plot$interacting_pair), .combine = rbind) %do% {
+  foreach(ipartner = ipartner_levels, .combine = rbind) %do% {
+    foreach(isite = site_levels, .combine = rbind) %do% {
+      fdata <- use_data_to_plot %>% 
+        filter(interacting_pair == ipair & interacting_partner == ipartner & isite == site)
+      if(nrow(fdata) == 0){
+        data.frame(interacting_pair = ipair, interacting_partner = ipartner, site = isite, mmedian = 0)
+      } else {
+        fdata %>% data.frame
+      }
+    }
+  }
+}
+
+use_data_to_plot <- new_data
+
+```
+
+```{r cellphonedb-site-all_types-dotplot, fig.width=10.2, fig.asp= 0.2}
+use_data_to_plot %>% 
+  ggplot(aes(interacting_partner, site, size = mmedian, color = mmedian)) +
+  geom_point() +
+  scale_color_distiller(palette = "Purples", na.value = "grey70", direction = 1) +
+  # scale_color_viridis_log10scaled +
+  facet_wrap(interacting_pair~., nrow = 1) +
+  theme(
+    axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1),
+    axis.ticks.y=element_blank(),
+    panel.border = element_rect(colour = "black", size=0.5),
+    panel.grid.major.x = element_line(linewidth = 0.2, colour="grey60", linetype = 'dashed'),
+    strip.background = element_blank()
+  ) +
+  labs(
+    x = NULL,
+    y = '',
+    color = 'Median\nscore', 
+    size = 'Median\nscore',
+    caption = 'Showing median score across replicates'
+  )
+
+
+
+```
+
+
+
+## Cytokine-receptor interaction by cluster
+
+Loading results files. File forma description could be found in the following [link](https://www.nature.com/articles/s41596-020-0292-x/tables/2).
+
+```{r cellphonedb-site-cl-build-data, eval = FALSE}
+res_path <- file.path(params$output_dir, 'CellPhoneDB/results')
+res_folders <- list.files(res_path, pattern = '(bone|brain|liver|lung|ovary|primary_tumor).*(cluster)')
+i <- res_folders[[1]]
+
+# Calculate stats
+cpd_merged <- foreach(i=res_folders, .combine = rbind) %do% {
+  site <- strsplit(i, "\\.") %>% map(1) %>% unlist()
+  mouse <- strsplit(i, "\\.") %>% map(2) %>% unlist()
+  celltype_src <- strsplit(i, "\\.") %>% map(3) %>% unlist()
+  
+  # Load data
+  pvalues_tab <- read_tsv(file.path(res_path, i, 'pvalues.txt'))
+  means_tab <- read_tsv(file.path(res_path, i, 'means.txt'))
+  sigmeans_tab <- read_tsv(file.path(res_path, i, 'significant_means.txt'))
+  
+  # Pvalues : Filter cytokine genes in receptor == FALSE
+  pvalues_tab_a <- pvalues_tab %>% 
+    filter((gene_a %in% cytokines_symbol_hs) & !receptor_a) %>% 
+    dplyr::rename(ligand = gene_b, receptor = gene_a) %>% 
+    dplyr::select(id_cp_interaction, interacting_pair, ligand, receptor, is_integrin, ends_with('Cancer')) %>% 
+    pivot_longer(cols = ends_with('Cancer'), names_to = "interacting_partner", values_to = "pvalue") %>% 
+    mutate(interacting_partner = gsub("\\|.*", "", interacting_partner))
+  
+  pvalues_tab_b <- pvalues_tab %>% 
+    filter((gene_b %in% cytokines_symbol_hs) & !receptor_b) %>% 
+    dplyr::rename(ligand = gene_a, receptor = gene_b) %>% 
+    dplyr::select(id_cp_interaction, interacting_pair, ligand, receptor, is_integrin, starts_with('Cancer')) %>% 
+    pivot_longer(cols = starts_with('Cancer'), names_to = "interacting_partner", values_to = "pvalue") %>% 
+    mutate(interacting_partner = gsub(".*\\|", "", interacting_partner))   
+
+  pvalues_mod <- rbind(pvalues_tab_a, pvalues_tab_b)
+  
+  # Means : Filter cytokine genes in receptor == FALSE
+  means_tab_a <- means_tab %>% 
+    filter((gene_a %in% cytokines_symbol_hs) & !receptor_a) %>% 
+    dplyr::rename(ligand = gene_b, receptor = gene_a) %>% 
+    dplyr::select(id_cp_interaction, interacting_pair, ligand, receptor, is_integrin, ends_with('Cancer')) %>% 
+    pivot_longer(cols = ends_with('Cancer'), names_to = "interacting_partner", values_to = "mean") %>% 
+    mutate(interacting_partner = gsub("\\|.*", "", interacting_partner))
+  
+  means_tab_b <- means_tab %>% 
+    filter((gene_b %in% cytokines_symbol_hs) & !receptor_b) %>% 
+    dplyr::rename(ligand = gene_a, receptor = gene_b) %>% 
+    dplyr::select(id_cp_interaction, interacting_pair, ligand, receptor, is_integrin, starts_with('Cancer')) %>% 
+    pivot_longer(cols = starts_with('Cancer'), names_to = "interacting_partner", values_to = "mean") %>% 
+    mutate(interacting_partner = gsub(".*\\|", "", interacting_partner))   
+  
+  means_mod <- rbind(means_tab_a, means_tab_b)
+ 
+  # Sig Means : Filter cytokine genes in receptor == FALSE
+  sigmeans_tab_a <- sigmeans_tab %>% 
+    filter((gene_a %in% cytokines_symbol_hs) & !receptor_a) %>% 
+    dplyr::rename(ligand = gene_b, receptor = gene_a) %>% 
+    dplyr::select(id_cp_interaction, interacting_pair, ligand, receptor, is_integrin, ends_with('Cancer')) %>% 
+    pivot_longer(cols = ends_with('Cancer'), names_to = "interacting_partner", values_to = "sigmean") %>% 
+    mutate(interacting_partner = gsub("\\|.*", "", interacting_partner))
+  
+  sigmeans_tab_b <- sigmeans_tab %>% 
+    filter((gene_b %in% cytokines_symbol_hs) & !receptor_b) %>% 
+    dplyr::rename(ligand = gene_a, receptor = gene_b) %>% 
+    dplyr::select(id_cp_interaction, interacting_pair, ligand, receptor, is_integrin, starts_with('Cancer')) %>% 
+    pivot_longer(cols = starts_with('Cancer'), names_to = "interacting_partner", values_to = "sigmean") %>% 
+    mutate(interacting_partner = gsub(".*\\|", "", interacting_partner))   
+  
+   sigmeans_mod <- rbind(sigmeans_tab_a, sigmeans_tab_b)
+  
+  
+  
+  full_join(means_mod,sigmeans_mod ) %>% 
+    left_join(pvalues_mod) %>% 
+    mutate(
+      sigmean = !is.na(sigmean),
+      site = site,
+      mouse = mouse,
+      celltype_src = celltype_src
+    )
+}
+
+# Add additional variables 
+cpd_merged %<>% 
+  mutate(
+    site = ifelse(site == 'liver', 'Liver', site),
+    site = ifelse(site == 'lung', 'Lung', site),
+    site = ifelse(site == 'primary_tumor', 'Primary tumor', site),
+    mouse = gsub("mouse_", "", mouse),
+    site_mouse = paste(site, mouse, sep = '_'),
+    site_mouse_celltype = paste(site, mouse, interacting_partner,sep = '_'),
+    pvalue = ifelse(pvalue==0, 0.0009, pvalue),
+    ip_celltype = paste(interacting_pair, interacting_partner,sep = '_')
+  ) 
+
+# Add normalized scores by lr and cell type
+cpd_merged <- foreach(i = unique(cpd_merged$ip_celltype), .combine = rbind) %do% {
+  cpd_merged %>%
+    filter(ip_celltype == i) %>%
+    mutate(mean_norm = normalize01(mean))
+}
+
+# Extract gene names to convert into MM. In some cases, receptor == NA mostly 
+# because is a complex. In those cases we try to extract the gene names from
+# the interacting pair
+use_gene_names <- c(
+  cpd_merged$ligand,
+  cpd_merged$receptor,
+  map(cpd_merged$interacting_pair, \(x) strsplit(x, "_") %>% unlist) %>% 
+    unlist
+) %>% 
+  na.omit %>% 
+  unique
+
+# Add MM to HS orthologs
+library(biomaRt)
+mart_human <- useMart("ensembl", dataset = "hsapiens_gene_ensembl", host = "https://dec2021.archive.ensembl.org/") 
+mart_mouse <- useMart("ensembl", dataset = "mmusculus_gene_ensembl", host = "https://dec2021.archive.ensembl.org/")
+hs_to_mm <- getLDS(
+  attributes = c("external_gene_name"), 
+  filters = "external_gene_name", 
+  values = use_gene_names,
+  mart = mart_human, 
+  attributesL = c("mgi_symbol"), 
+  martL = mart_mouse
+)
+
+
+# Add orthologous info if receptor is != NA
+cpd_merged %<>% 
+  dplyr::rename(
+    ligand.hs = ligand,
+    receptor.hs = receptor,
+    interacting_pair.hs = interacting_pair
+  ) %>%
+  left_join(hs_to_mm, by = c('ligand.hs' = 'Gene.name')) %>% 
+  dplyr::rename(ligand = MGI.symbol) %>% 
+  left_join(hs_to_mm, by = c('receptor.hs' = 'Gene.name')) %>% 
+  dplyr::rename(receptor = MGI.symbol) %>% 
+  mutate(interacting_pair = paste(ligand, receptor, sep = '_'))
+
+
+  
+# Add orthologous info if receptor is == NA
+ip_na <- cpd_merged %>% data.frame %>% 
+  filter(is.na(receptor) | is.na(ligand)) %>% 
+  pull( interacting_pair.hs) %>% 
+  unique
+
+ip_to_mm <- foreach (i = ip_na) %do% {
+  ist <- i %>% strsplit("_") %>% unlist
+  jc <- foreach(j = ist) %do% {
+    if(j %in% hs_to_mm$Gene.name) {
+      hs_to_mm %>% filter(Gene.name == j) %>% pull(MGI.symbol) %>% head(1)
+    } else {
+      j
+    }
+  }
+  unlist(jc) %>% paste(collapse = "_")
+}
+
+ip_trans <- data.frame(original_ip = ip_na, new_ip = unlist(ip_to_mm))
+cpd_merged %<>% 
+  left_join(ip_trans, by = c('interacting_pair.hs' = 'original_ip')) %>% 
+  mutate(interacting_pair = ifelse(!is.na(new_ip), new_ip, interacting_pair)) %>% 
+  dplyr::select(-new_ip)
+
+
+# Selection of final variables
+cpd_merged %<>% dplyr::select(-contains('.hs'), -id_cp_interaction) %>% 
+  dplyr::select(interacting_pair, everything()) %>% 
+  unique %>% 
+  data.frame
+
+saveRDS(cpd_merged, file = file.path(params$output_dir, 'site_cluster-cpdb.rds'))
+```
+
+```{r cellphonedb-site_cl-load}
+cpd_merged <- readRDS(file = file.path(params$output_dir, 'site_cluster-cpdb.rds')) %>% 
+  mutate(site = factor(site, site_caps_ord))
+```
+
+
+### Table of Results
+
+In this table we are showing results for interactions involving cytokine ligands in TME and receptors in the cancer populations. The analysis is done for each pair of cell type by mpuse and site. List of cytokine genes was obtained from GO (GO:0005125) cytokine activity ([definition](http://www.informatics.jax.org/vocab/gene_ontology/GO:0005125).
+
+Main column description : 
+
+  - mean : mean value refers to the total mean of the individual partner average expression values in the corresponding interacting pairs of cell types. If one of the mean values is 0, then the total mean is set to 0
+  
+  - pvalue : P value refers to the enrichment of the interacting ligand–receptor pair in each of the interacting pairs of cell types
+  
+  -sigmean: Significant mean calculation for all the interacting partners. If p.value < 0.05, the value will be the mean. Alternatively, the value is set to 0
+
+
+```{r cellphonedb-site-cl-table}
+rmd_file <- current_input()
+if(is.null(rmd_file))
+  rmd_file <- 'tmp'
+file_immgen_xlsx <- file.path('./docs/file',rmd_file, 'cellphonedb-site_type-immgen-tables.xlsx')
+
+dir.create(dirname(file_immgen_xlsx), recursive = TRUE, showWarnings = FALSE)
+
+# Save Mouse RNA-seq Atlas tables
+wb <- createWorkbook()
+use_data <- cpd_merged %>% filter(celltype_src == 'immgen') %>% mutate(interacting_partner = factor(interacting_partner))
+for(celltype in levels(use_data$interacting_partner)){
+  if(nchar(celltype) > 31)
+    celltype <- paste0(substr(celltype, 1, 30), ".")
+  addWorksheet(wb, celltype)
+  writeData(wb,celltype,  use_data %>% filter(interacting_partner == celltype))
+}
+saveWorkbook(wb, file_immgen_xlsx, TRUE)
+rm(wb)
+```
+
+The tables of results can be downloaded using the following links for cell types based on [ImmGen](`r gsub("docs/", "" , file_immgen_xlsx)`).
+
+
+### Dot plots
+
+Plot showing meand and pvalues for all the interaction pairs (y-axis) that are significant (P<=0.05) in at least one of the samples (x-axis). Rows are clustering based on means values using euclidean distance and complete method for agglomeration. Each column represent a mouse replicate. 
+
+Plot inspired from [CellPhoneDb dotplot code](https://github.com/Teichlab/cellphonedb/blob/master/cellphonedb/src/plotters/R/plot_dot_by_column_name.R).
+
+```{r cellphonedb-site-cl-dotplot-conf}
+use_data <- cpd_merged %>% 
+  filter(celltype_src == "cluster") %>% 
+  mutate(i_id_cp_interaction = paste(interacting_partner, interacting_pair, sep = '-'))
+
+# Select interactions
+# sig_interactions <- use_data %>% 
+#   filter(sigmean) %>% collect %>% .[['id_cp_interaction']] %>% unique
+
+sig_interactions_ct <- foreach(i=unique(use_data$interacting_partner), .combine = c) %do% {
+  use_data %>% 
+    filter(interacting_partner == i) %>% 
+    filter(sigmean) %>% 
+    mutate(i_id_cp_interaction = paste(interacting_partner, interacting_pair, sep = '-')) %>% 
+    pull(i_id_cp_interaction) %>% 
+    unique
+}
+
+# Cluster interactions
+mat_means <- use_data %>% 
+  filter(i_id_cp_interaction %in% sig_interactions_ct) %>% 
+  group_by(site_mouse_celltype, interacting_pair) %>% 
+  summarise(mean = mean(mean)) %>% 
+  pivot_wider(names_from = site_mouse_celltype, values_from = mean) %>% 
+  column_to_rownames('interacting_pair')
+ 
+mat_means[is.na(mat_means)] <- 0
+means_interaction_hclust <- hclust(dist(mat_means))
+interaction_labels_hclust <- means_interaction_hclust$labels[means_interaction_hclust$order]
+
+
+use_data_to_plot <- use_data %>%
+  mutate(site = gsub("_", "\n", site)) %>%
+  mutate(interacting_partner = gsub(" ", "\n", interacting_partner)) %>%
+  filter(i_id_cp_interaction %in% sig_interactions_ct) %>%
+  filter(mean >= 2) %>%
+  mutate(interacting_pair = factor(interacting_pair, levels = interaction_labels_hclust))
+# 
+# use_data <- cpd_merged %>% 
+#   filter(celltype_src == "cluster") %>% 
+#   mutate(i_id_cp_interaction = paste(interacting_partner, interacting_pair, sep = '-'))
+# 
+# # Select interactions
+# # sig_interactions <- use_data %>% 
+# #   filter(sigmean) %>% collect %>% .[['interacting_pair']] %>% unique
+# 
+# sig_interactions_ct <- foreach(i=unique(use_data$interacting_partner), .combine = c) %do% {
+#   use_data %>% 
+#     filter(interacting_partner == i) %>% 
+#     filter(sigmean) %>% 
+#     mutate(i_id_cp_interaction = paste(interacting_partner, interacting_pair, sep = '-')) %>% 
+#     pull(i_id_cp_interaction) %>% 
+#     unique
+# }
+# 
+# # Cluster interactions
+# mat_means <- use_data %>% 
+#   filter(i_id_cp_interaction %in% sig_interactions_ct) %>% 
+#   dplyr::select(site_mouse_celltype, interacting_pair, mean) %>% 
+#   pivot_wider(names_from = site_mouse_celltype, values_from = mean) %>% 
+#   column_to_rownames('interacting_pair')
+#  
+# mat_means[is.na(mat_means)] <- 0
+# means_interaction_hclust <- hclust(dist(mat_means))
+# interaction_labels_hclust <- means_interaction_hclust$labels[means_interaction_hclust$order]
+#   
+# 
+# use_data_to_plot <- use_data %>%
+#   mutate(site = gsub("_", "\n", site)) %>%
+#   mutate(interacting_partner = gsub(" ", "\n", interacting_partner)) %>%
+#   filter(i_id_cp_interaction %in% sig_interactions_ct) %>%
+#   filter(mean >= 2) %>%
+#   mutate(interacting_pair = factor(interacting_pair, levels = interaction_labels_hclust))
+```
+
+#### Colored by P-value
+```{r cellphonedb-site-cl-dotplot, fig.width=5.2, fig.asp= 2.1}
+use_data_to_plot %>% 
+  ggplot(aes(mouse, interacting_pair, size = mean, color = -log10(pvalue))) +
+    geom_point() +
+    # geom_point(data = use_data_to_plot %>% filter(pvalue < 0.05),
+               # pch = 21, color = 'black', stroke = 1) +
+    # geom_point(data = use_data_to_plot %>% filter(pvalue > 0.05), 
+             # pch = 21, color = 'grey70', stroke = 1, show.legend = FALSE) +
+    scale_size(range = c(0.3, 4)) +
+    # scale_color_distiller(palette = "BuPu", na.value = "grey70", direction = 1) +
+    scale_color_viridis_c(na.value = "grey70") +
+    facet_grid(interacting_partner~site, scales = 'free', space = 'free') +
+    labs(
+      y = '', 
+      x = 'Mouse replicate',
+      size = 'Mean',
+      color = bquote("-log"[10] ~ .(paste0("(P-value)"))),
+      caption = 'Showing interaction pairs with P≤0.05 and log2 Mean ≥ 2'
+    ) +
+    theme(
+      panel.border = element_rect(color = "black", fill = NA, linewidth = 1),
+      axis.line = element_blank(),
+      # axis.text.x=element_blank(),
+      axis.ticks.x=element_blank(),
+      axis.line.x = element_blank(),
+      panel.grid.major.y = element_line(linewidth = 0.2, colour="grey60", linetype = 'dashed'),
+      # panel.grid.major.x = element_line(linewidth = 0.2, colour="grey60", linetype = 'dashed'),
+      strip.background = element_blank()#,
+      # strip.text.y = element_blank()
+      )
+```
+
+
+#### Colored by score
+```{r cellphonedb-site-cl-dotplot2, fig.width=5.2, fig.asp= 2.1}
+use_data_to_plot %>% 
+  # ggplot(aes(mouse, interacting_pair, size = mean, color = -log10(pvalue))) +
+  ggplot(aes(mouse, interacting_pair, color = mean, size = -log10(pvalue))) +
+    geom_point() +
+    # geom_point(data = use_data_to_plot %>% filter(pvalue < 0.05),
+               # pch = 21, color = 'black', stroke = 1) +
+    # # geom_point(data = use_data_to_plot %>% filter(pvalue > 0.05), 
+    #          pch = 21, color = 'grey70', stroke = 1, show.legend = FALSE) +
+    scale_size(range = c(0.1, 3.5)) +
+    # scale_color_distiller(palette = "BuPu", na.value = "grey70", direction = 1) +
+    scale_color_viridis_log10scaled +
+    facet_grid(interacting_partner~site, scales = 'free', space = 'free') +
+    labs(
+      y = '', 
+      x = 'Mouse replicate',
+      color = 'Mean',
+      size = bquote("-log"[10] ~ .(paste0("(P-value)"))),
+      caption = 'Showing interaction pairs with P≤0.05 and log2 Mean ≥ 2'
+    ) +
+    theme(
+      panel.border = element_rect(color = "black", fill = NA, linewidth = 1),
+      axis.line = element_blank(),
+      # axis.text.x=element_blank(),
+      axis.ticks.x=element_blank(),
+      axis.line.x = element_blank(),
+      panel.grid.major.y = element_line(linewidth = 0.2, colour="grey60", linetype = 'dashed'),
+      # panel.grid.major.x = element_line(linewidth = 0.2, colour="grey60", linetype = 'dashed'),
+      strip.background = element_blank()#,
+      # strip.text.y = element_blank()
+      )
+```
+
+
+

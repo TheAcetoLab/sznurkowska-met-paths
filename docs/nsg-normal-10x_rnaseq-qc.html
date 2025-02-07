@@ -1,0 +1,1941 @@
+<!DOCTYPE html>
+
+<html>
+
+<head>
+
+<meta charset="utf-8" />
+<meta name="generator" content="pandoc" />
+<meta http-equiv="X-UA-Compatible" content="IE=EDGE" />
+
+
+<meta name="author" content="Francesc Castro-Giner" />
+
+<meta name="date" content="2025-02-07" />
+
+<title>10x RNA-seq analysis of huNSG cancer</title>
+
+<script src="site_libs/header-attrs-2.25/header-attrs.js"></script>
+<script src="site_libs/jquery-3.6.0/jquery-3.6.0.min.js"></script>
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<link href="site_libs/bootstrap-3.3.5/css/cosmo.min.css" rel="stylesheet" />
+<script src="site_libs/bootstrap-3.3.5/js/bootstrap.min.js"></script>
+<script src="site_libs/bootstrap-3.3.5/shim/html5shiv.min.js"></script>
+<script src="site_libs/bootstrap-3.3.5/shim/respond.min.js"></script>
+<style>h1 {font-size: 34px;}
+       h1.title {font-size: 38px;}
+       h2 {font-size: 30px;}
+       h3 {font-size: 24px;}
+       h4 {font-size: 18px;}
+       h5 {font-size: 16px;}
+       h6 {font-size: 12px;}
+       code {color: inherit; background-color: rgba(0, 0, 0, 0.04);}
+       pre:not([class]) { background-color: white }</style>
+<script src="site_libs/jqueryui-1.13.2/jquery-ui.min.js"></script>
+<link href="site_libs/tocify-1.9.1/jquery.tocify.css" rel="stylesheet" />
+<script src="site_libs/tocify-1.9.1/jquery.tocify.js"></script>
+<script src="site_libs/navigation-1.1/tabsets.js"></script>
+<script src="site_libs/navigation-1.1/codefolding.js"></script>
+<link href="site_libs/highlightjs-9.12.0/textmate.css" rel="stylesheet" />
+<script src="site_libs/highlightjs-9.12.0/highlight.js"></script>
+<script src="site_libs/kePrint-0.0.1/kePrint.js"></script>
+<link href="site_libs/lightable-0.0.1/lightable.css" rel="stylesheet" />
+<link href="site_libs/font-awesome-6.4.2/css/all.min.css" rel="stylesheet" />
+<link href="site_libs/font-awesome-6.4.2/css/v4-shims.min.css" rel="stylesheet" />
+
+<link rel="icon" href="https://github.com/workflowr/workflowr-assets/raw/main/img/reproducible.png">
+<!-- Add a small amount of space between sections. -->
+<style type="text/css">
+div.section {
+  padding-top: 12px;
+}
+</style>
+
+
+
+<style type="text/css">
+  code{white-space: pre-wrap;}
+  span.smallcaps{font-variant: small-caps;}
+  span.underline{text-decoration: underline;}
+  div.column{display: inline-block; vertical-align: top; width: 50%;}
+  div.hanging-indent{margin-left: 1.5em; text-indent: -1.5em;}
+  ul.task-list{list-style: none;}
+    </style>
+
+<style type="text/css">code{white-space: pre;}</style>
+<script type="text/javascript">
+if (window.hljs) {
+  hljs.configure({languages: []});
+  hljs.initHighlightingOnLoad();
+  if (document.readyState && document.readyState === "complete") {
+    window.setTimeout(function() { hljs.initHighlighting(); }, 0);
+  }
+}
+</script>
+
+
+
+
+
+
+
+
+
+<style type = "text/css">
+.main-container {
+  max-width: 940px;
+  margin-left: auto;
+  margin-right: auto;
+}
+img {
+  max-width:100%;
+}
+.tabbed-pane {
+  padding-top: 12px;
+}
+.html-widget {
+  margin-bottom: 20px;
+}
+button.code-folding-btn:focus {
+  outline: none;
+}
+summary {
+  display: list-item;
+}
+details > summary > p:only-child {
+  display: inline;
+}
+pre code {
+  padding: 0;
+}
+</style>
+
+
+<style type="text/css">
+.dropdown-submenu {
+  position: relative;
+}
+.dropdown-submenu>.dropdown-menu {
+  top: 0;
+  left: 100%;
+  margin-top: -6px;
+  margin-left: -1px;
+  border-radius: 0 6px 6px 6px;
+}
+.dropdown-submenu:hover>.dropdown-menu {
+  display: block;
+}
+.dropdown-submenu>a:after {
+  display: block;
+  content: " ";
+  float: right;
+  width: 0;
+  height: 0;
+  border-color: transparent;
+  border-style: solid;
+  border-width: 5px 0 5px 5px;
+  border-left-color: #cccccc;
+  margin-top: 5px;
+  margin-right: -10px;
+}
+.dropdown-submenu:hover>a:after {
+  border-left-color: #adb5bd;
+}
+.dropdown-submenu.pull-left {
+  float: none;
+}
+.dropdown-submenu.pull-left>.dropdown-menu {
+  left: -100%;
+  margin-left: 10px;
+  border-radius: 6px 0 6px 6px;
+}
+</style>
+
+<script type="text/javascript">
+// manage active state of menu based on current page
+$(document).ready(function () {
+  // active menu anchor
+  href = window.location.pathname
+  href = href.substr(href.lastIndexOf('/') + 1)
+  if (href === "")
+    href = "index.html";
+  var menuAnchor = $('a[href="' + href + '"]');
+
+  // mark the anchor link active (and if it's in a dropdown, also mark that active)
+  var dropdown = menuAnchor.closest('li.dropdown');
+  if (window.bootstrap) { // Bootstrap 4+
+    menuAnchor.addClass('active');
+    dropdown.find('> .dropdown-toggle').addClass('active');
+  } else { // Bootstrap 3
+    menuAnchor.parent().addClass('active');
+    dropdown.addClass('active');
+  }
+
+  // Navbar adjustments
+  var navHeight = $(".navbar").first().height() + 15;
+  var style = document.createElement('style');
+  var pt = "padding-top: " + navHeight + "px; ";
+  var mt = "margin-top: -" + navHeight + "px; ";
+  var css = "";
+  // offset scroll position for anchor links (for fixed navbar)
+  for (var i = 1; i <= 6; i++) {
+    css += ".section h" + i + "{ " + pt + mt + "}\n";
+  }
+  style.innerHTML = "body {" + pt + "padding-bottom: 40px; }\n" + css;
+  document.head.appendChild(style);
+});
+</script>
+
+<!-- tabsets -->
+
+<style type="text/css">
+.tabset-dropdown > .nav-tabs {
+  display: inline-table;
+  max-height: 500px;
+  min-height: 44px;
+  overflow-y: auto;
+  border: 1px solid #ddd;
+  border-radius: 4px;
+}
+
+.tabset-dropdown > .nav-tabs > li.active:before, .tabset-dropdown > .nav-tabs.nav-tabs-open:before {
+  content: "\e259";
+  font-family: 'Glyphicons Halflings';
+  display: inline-block;
+  padding: 10px;
+  border-right: 1px solid #ddd;
+}
+
+.tabset-dropdown > .nav-tabs.nav-tabs-open > li.active:before {
+  content: "\e258";
+  font-family: 'Glyphicons Halflings';
+  border: none;
+}
+
+.tabset-dropdown > .nav-tabs > li.active {
+  display: block;
+}
+
+.tabset-dropdown > .nav-tabs > li > a,
+.tabset-dropdown > .nav-tabs > li > a:focus,
+.tabset-dropdown > .nav-tabs > li > a:hover {
+  border: none;
+  display: inline-block;
+  border-radius: 4px;
+  background-color: transparent;
+}
+
+.tabset-dropdown > .nav-tabs.nav-tabs-open > li {
+  display: block;
+  float: none;
+}
+
+.tabset-dropdown > .nav-tabs > li {
+  display: none;
+}
+</style>
+
+<!-- code folding -->
+<style type="text/css">
+.code-folding-btn { margin-bottom: 4px; }
+</style>
+
+
+
+<style type="text/css">
+
+#TOC {
+  margin: 25px 0px 20px 0px;
+}
+@media (max-width: 768px) {
+#TOC {
+  position: relative;
+  width: 100%;
+}
+}
+
+@media print {
+.toc-content {
+  /* see https://github.com/w3c/csswg-drafts/issues/4434 */
+  float: right;
+}
+}
+
+.toc-content {
+  padding-left: 30px;
+  padding-right: 40px;
+}
+
+div.main-container {
+  max-width: 1200px;
+}
+
+div.tocify {
+  width: 20%;
+  max-width: 260px;
+  max-height: 85%;
+}
+
+@media (min-width: 768px) and (max-width: 991px) {
+  div.tocify {
+    width: 25%;
+  }
+}
+
+@media (max-width: 767px) {
+  div.tocify {
+    width: 100%;
+    max-width: none;
+  }
+}
+
+.tocify ul, .tocify li {
+  line-height: 20px;
+}
+
+.tocify-subheader .tocify-item {
+  font-size: 0.90em;
+}
+
+.tocify .list-group-item {
+  border-radius: 0px;
+}
+
+
+</style>
+
+
+
+</head>
+
+<body>
+
+
+<div class="container-fluid main-container">
+
+
+<!-- setup 3col/9col grid for toc_float and main content  -->
+<div class="row">
+<div class="col-xs-12 col-sm-4 col-md-3">
+<div id="TOC" class="tocify">
+</div>
+</div>
+
+<div class="toc-content col-xs-12 col-sm-8 col-md-9">
+
+
+
+
+<div class="navbar navbar-default  navbar-fixed-top" role="navigation">
+  <div class="container">
+    <div class="navbar-header">
+      <button type="button" class="navbar-toggle collapsed" data-toggle="collapse" data-bs-toggle="collapse" data-target="#navbar" data-bs-target="#navbar">
+        <span class="icon-bar"></span>
+        <span class="icon-bar"></span>
+        <span class="icon-bar"></span>
+      </button>
+      <a class="navbar-brand" href="index.html">met-paths</a>
+    </div>
+    <div id="navbar" class="navbar-collapse collapse">
+      <ul class="nav navbar-nav">
+        <li>
+  <a href="index.html">Home</a>
+</li>
+<li>
+  <a href="about.html">About</a>
+</li>
+<li>
+  <a href="license.html">License</a>
+</li>
+      </ul>
+      <ul class="nav navbar-nav navbar-right">
+        <li>
+  <a href="https://github.com/TheAcetoLab/sznurkowska-met-paths">
+    <span class="fab fa-github"></span>
+     
+    Source code
+  </a>
+</li>
+      </ul>
+    </div><!--/.nav-collapse -->
+  </div><!--/.container -->
+</div><!--/.navbar -->
+
+<div id="header">
+
+<div class="btn-group pull-right float-right">
+<button type="button" class="btn btn-default btn-xs btn-secondary btn-sm dropdown-toggle" data-toggle="dropdown" data-bs-toggle="dropdown" aria-haspopup="true" aria-expanded="false"><span>Code</span> <span class="caret"></span></button>
+<ul class="dropdown-menu dropdown-menu-right" style="min-width: 50px;">
+<li><a id="rmd-show-all-code" href="#">Show All Code</a></li>
+<li><a id="rmd-hide-all-code" href="#">Hide All Code</a></li>
+</ul>
+</div>
+
+
+
+<h1 class="title toc-ignore">10x RNA-seq analysis of huNSG cancer</h1>
+<h3 class="subtitle">Demultiplexing with hashtag oligos (HTOs)</h3>
+<h4 class="author">Francesc Castro-Giner</h4>
+<h4 class="date">February 07, 2025</h4>
+
+</div>
+
+
+<p>
+<button type="button" class="btn btn-default btn-workflowr btn-workflowr-report" data-toggle="collapse" data-target="#workflowr-report">
+<span class="glyphicon glyphicon-list" aria-hidden="true"></span>
+workflowr <span class="glyphicon glyphicon-ok text-success"
+aria-hidden="true"></span>
+</button>
+</p>
+<div id="workflowr-report" class="collapse">
+<ul class="nav nav-tabs">
+<li class="active">
+<a data-toggle="tab" href="#summary">Summary</a>
+</li>
+<li>
+<a data-toggle="tab" href="#checks"> Checks <span
+class="glyphicon glyphicon-ok text-success" aria-hidden="true"></span>
+</a>
+</li>
+<li>
+<a data-toggle="tab" href="#versions">Past versions</a>
+</li>
+</ul>
+<div class="tab-content">
+<div id="summary" class="tab-pane fade in active">
+<p>
+<strong>Last updated:</strong> 2025-02-07
+</p>
+<p>
+<strong>Checks:</strong> <span
+class="glyphicon glyphicon-ok text-success" aria-hidden="true"></span> 7
+<span class="glyphicon glyphicon-exclamation-sign text-danger"
+aria-hidden="true"></span> 0
+</p>
+<p>
+<strong>Knit directory:</strong> <code>sznurkowska-met-paths/</code>
+<span class="glyphicon glyphicon-question-sign" aria-hidden="true"
+title="This is the local directory in which the code in this file was executed.">
+</span>
+</p>
+<p>
+This reproducible <a href="https://rmarkdown.rstudio.com">R Markdown</a>
+analysis was created with <a
+  href="https://github.com/workflowr/workflowr">workflowr</a> (version
+1.7.1). The <em>Checks</em> tab describes the reproducibility checks
+that were applied when the results were created. The <em>Past
+versions</em> tab lists the development history.
+</p>
+<hr>
+</div>
+<div id="checks" class="tab-pane fade">
+<div id="workflowr-checks" class="panel-group">
+<div class="panel panel-default">
+<div class="panel-heading">
+<p class="panel-title">
+<a data-toggle="collapse" data-parent="#workflowr-checks" href="#strongRMarkdownfilestronguptodate">
+<span class="glyphicon glyphicon-ok text-success"
+aria-hidden="true"></span> <strong>R Markdown file:</strong> up-to-date
+</a>
+</p>
+</div>
+<div id="strongRMarkdownfilestronguptodate"
+class="panel-collapse collapse">
+<div class="panel-body">
+<p>Great! Since the R Markdown file has been committed to the Git
+repository, you know the exact version of the code that produced these
+results.</p>
+</div>
+</div>
+</div>
+<div class="panel panel-default">
+<div class="panel-heading">
+<p class="panel-title">
+<a data-toggle="collapse" data-parent="#workflowr-checks" href="#strongEnvironmentstrongempty">
+<span class="glyphicon glyphicon-ok text-success"
+aria-hidden="true"></span> <strong>Environment:</strong> empty </a>
+</p>
+</div>
+<div id="strongEnvironmentstrongempty" class="panel-collapse collapse">
+<div class="panel-body">
+<p>Great job! The global environment was empty. Objects defined in the
+global environment can affect the analysis in your R Markdown file in
+unknown ways. For reproduciblity it’s best to always run the code in an
+empty environment.</p>
+</div>
+</div>
+</div>
+<div class="panel panel-default">
+<div class="panel-heading">
+<p class="panel-title">
+<a data-toggle="collapse" data-parent="#workflowr-checks" href="#strongSeedstrongcodesetseed20250206code">
+<span class="glyphicon glyphicon-ok text-success"
+aria-hidden="true"></span> <strong>Seed:</strong>
+<code>set.seed(20250206)</code> </a>
+</p>
+</div>
+<div id="strongSeedstrongcodesetseed20250206code"
+class="panel-collapse collapse">
+<div class="panel-body">
+<p>The command <code>set.seed(20250206)</code> was run prior to running
+the code in the R Markdown file. Setting a seed ensures that any results
+that rely on randomness, e.g. subsampling or permutations, are
+reproducible.</p>
+</div>
+</div>
+</div>
+<div class="panel panel-default">
+<div class="panel-heading">
+<p class="panel-title">
+<a data-toggle="collapse" data-parent="#workflowr-checks" href="#strongSessioninformationstrongrecorded">
+<span class="glyphicon glyphicon-ok text-success"
+aria-hidden="true"></span> <strong>Session information:</strong>
+recorded </a>
+</p>
+</div>
+<div id="strongSessioninformationstrongrecorded"
+class="panel-collapse collapse">
+<div class="panel-body">
+<p>Great job! Recording the operating system, R version, and package
+versions is critical for reproducibility.</p>
+</div>
+</div>
+</div>
+<div class="panel panel-default">
+<div class="panel-heading">
+<p class="panel-title">
+<a data-toggle="collapse" data-parent="#workflowr-checks" href="#strongCachestrongnone">
+<span class="glyphicon glyphicon-ok text-success"
+aria-hidden="true"></span> <strong>Cache:</strong> none </a>
+</p>
+</div>
+<div id="strongCachestrongnone" class="panel-collapse collapse">
+<div class="panel-body">
+<p>Nice! There were no cached chunks for this analysis, so you can be
+confident that you successfully produced the results during this
+run.</p>
+</div>
+</div>
+</div>
+<div class="panel panel-default">
+<div class="panel-heading">
+<p class="panel-title">
+<a data-toggle="collapse" data-parent="#workflowr-checks" href="#strongFilepathsstrongrelative">
+<span class="glyphicon glyphicon-ok text-success"
+aria-hidden="true"></span> <strong>File paths:</strong> relative </a>
+</p>
+</div>
+<div id="strongFilepathsstrongrelative" class="panel-collapse collapse">
+<div class="panel-body">
+<p>Great job! Using relative paths to the files within your workflowr
+project makes it easier to run your code on other machines.</p>
+</div>
+</div>
+</div>
+<div class="panel panel-default">
+<div class="panel-heading">
+<p class="panel-title">
+<a data-toggle="collapse" data-parent="#workflowr-checks" href="#strongRepositoryversionstrongahrefhttpsgithubcomTheAcetoLabsznurkowskametpathstree30d581dbf1cff0b0af4988bcfb642939a182358btargetblank30d581da">
+<span class="glyphicon glyphicon-ok text-success"
+aria-hidden="true"></span> <strong>Repository version:</strong>
+<a href="https://github.com/TheAcetoLab/sznurkowska-met-paths/tree/30d581dbf1cff0b0af4988bcfb642939a182358b" target="_blank">30d581d</a>
+</a>
+</p>
+</div>
+<div
+id="strongRepositoryversionstrongahrefhttpsgithubcomTheAcetoLabsznurkowskametpathstree30d581dbf1cff0b0af4988bcfb642939a182358btargetblank30d581da"
+class="panel-collapse collapse">
+<div class="panel-body">
+<p>
+Great! You are using Git for version control. Tracking code development
+and connecting the code version to the results is critical for
+reproducibility.
+</p>
+<p>
+The results in this page were generated with repository version
+<a href="https://github.com/TheAcetoLab/sznurkowska-met-paths/tree/30d581dbf1cff0b0af4988bcfb642939a182358b" target="_blank">30d581d</a>.
+See the <em>Past versions</em> tab to see a history of the changes made
+to the R Markdown and HTML files.
+</p>
+<p>
+Note that you need to be careful to ensure that all relevant files for
+the analysis have been committed to Git prior to generating the results
+(you can use <code>wflow_publish</code> or
+<code>wflow_git_commit</code>). workflowr only checks the R Markdown
+file, but you know if there are other scripts or data files that it
+depends on. Below is the status of the Git repository when the results
+were generated:
+</p>
+<pre><code>
+Ignored files:
+    Ignored:    .Rhistory
+    Ignored:    .Rproj.user/
+    Ignored:    data/patients/
+    Ignored:    data/resources/
+    Ignored:    data/rnaseq/
+    Ignored:    data/seer/
+    Ignored:    output/p26532_o26674/
+    Ignored:    output/p26532_o28268/
+    Ignored:    output/p26532_o28268_o34980/
+    Ignored:    output/p26532_o34980/
+
+Untracked files:
+    Untracked:  analysis/br16-10x_rnaseq-cancer_cells-main.Rmd
+    Untracked:  analysis/br16-10x_rnaseq-qc.Rmd
+    Untracked:  analysis/mvt1-tumor-10x_rnaseq-qc.Rmd
+    Untracked:  analysis/templates/
+    Untracked:  code/R-functions/
+    Untracked:  configuration/
+    Untracked:  workflowr_update.R
+
+Unstaged changes:
+    Modified:   .gitignore
+    Modified:   sznurkowska-met-paths.Rproj
+
+</code></pre>
+<p>
+Note that any generated files, e.g. HTML, png, CSS, etc., are not
+included in this status report because it is ok for generated content to
+have uncommitted changes.
+</p>
+</div>
+</div>
+</div>
+</div>
+<hr>
+</div>
+<div id="versions" class="tab-pane fade">
+<p>
+These are the previous versions of the repository in which changes were
+made to the R Markdown
+(<code>analysis/nsg-normal-10x_rnaseq-qc.Rmd</code>) and HTML
+(<code>docs/nsg-normal-10x_rnaseq-qc.html</code>) files. If you’ve
+configured a remote Git repository (see <code>?wflow_git_remote</code>),
+click on the hyperlinks in the table below to view the files as they
+were in that past version.
+</p>
+<div class="table-responsive">
+<table class="table table-condensed table-hover">
+<thead>
+<tr>
+<th>
+File
+</th>
+<th>
+Version
+</th>
+<th>
+Author
+</th>
+<th>
+Date
+</th>
+<th>
+Message
+</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>
+Rmd
+</td>
+<td>
+<a href="https://github.com/TheAcetoLab/sznurkowska-met-paths/blob/30d581dbf1cff0b0af4988bcfb642939a182358b/analysis/nsg-normal-10x_rnaseq-qc.Rmd" target="_blank">30d581d</a>
+</td>
+<td>
+Francesc Castro-Giner
+</td>
+<td>
+2025-02-07
+</td>
+<td>
+Add nsg normal analysis
+</td>
+</tr>
+</tbody>
+</table>
+</div>
+<hr>
+</div>
+</div>
+</div>
+<div id="load-libraries-additional-functions-and-data"
+class="section level2" number="1">
+<h2><span class="header-section-number">1</span> Load libraries,
+additional functions and data</h2>
+<p>Setup environment</p>
+<pre class="r"><code>knitr::opts_chunk$set(results=&#39;asis&#39;, echo=TRUE, message=FALSE, warning=FALSE, error=FALSE, fig.align = &#39;center&#39;, fig.width = 3.5, fig.asp = 0.618, dpi = 600, dev = c(&quot;png&quot;, &quot;pdf&quot;))
+
+options(stringsAsFactors = FALSE)
+
+set.seed(1011110)</code></pre>
+<p>Load packages</p>
+<pre class="r"><code>library(tidyverse)
+library(showtext)
+library(foreach)
+library(DT)
+library(knitr)
+library(kableExtra)
+library(cowplot)
+library(colorblindr)
+library(ggbeeswarm)
+library(arsenal)
+
+library(scater)
+library(DropletUtils)
+library(Seurat)
+library(scran)
+library(scDblFinder)
+library(BiocSingular)
+
+# library(ComplexHeatmap)
+# library(circlize)
+# library(RColorBrewer)
+# library(DT)</code></pre>
+<p>Load ggplot theme</p>
+<pre class="r"><code>source(&quot;./configuration/rmarkdown/ggplot_theme.R&quot;)</code></pre>
+<p>Clean files generated in previous runs</p>
+<pre class="r"><code>rmd_file &lt;- current_input()
+if(!is.null(rmd_file)) {
+  figures_dir &lt;- file.path(&#39;./docs/figure&#39;,rmd_file)
+  if(dir.exists(figures_dir)) {
+    unlink(file.path(figures_dir, &quot;*&quot;))
+  }
+}</code></pre>
+</div>
+<div id="introduction" class="section level2" number="2">
+<h2><span class="header-section-number">2</span> Introduction</h2>
+</div>
+<div id="description" class="section level2" number="3">
+<h2><span class="header-section-number">3</span> Description</h2>
+</div>
+<div id="data-wrangling" class="section level2" number="4">
+<h2><span class="header-section-number">4</span> Data wrangling</h2>
+<p>Load hashtag metadata</p>
+<pre class="r"><code>hash_annot &lt;- read_csv(params$hash_annot) %&gt;% dplyr::select(sample_alias, fb_id, additional_fields)
+
+# Split additional fields
+x &lt;- str_split(hash_annot$additional_fields, &quot;;&quot;)
+add_fields &lt;- foreach(y = x, .combine = rbind) %do% {
+  res &lt;- str_split(y, &quot;=&quot;, simplify = T)
+  res[,2] %&gt;% set_names(res[,1])
+}
+hash_annot &lt;- cbind(hash_annot, add_fields) %&gt;% 
+  dplyr::select(-additional_fields) %&gt;% 
+  rename(&#39;sample_alias&#39; = &#39;Sample&#39;)
+
+# There is a problem in the field of sample
+hash_annot &lt;- hash_annot %&gt;% 
+  mutate(Sample = ifelse(Sample == &#39;NSG lungs and livers&#39;,
+                         &#39;huNSG_ms3_Plate_4120_1&#39;,
+                         Sample))</code></pre>
+<p>Load sample metadata</p>
+<pre class="r"><code>sample_annot &lt;- read_csv(params$sample_annot) %&gt;% 
+  dplyr::select(sample_alias, mouse_id) %&gt;% 
+  rename(&#39;sample_alias&#39; = &#39;Sample&#39;)
+  
+hash_annot &lt;- hash_annot %&gt;% 
+  left_join(sample_annot)</code></pre>
+<p>Load SCE file information</p>
+<pre class="r"><code># Load files, using system instead of list.files for speed reasons
+sce_files &lt;- system(paste(&quot;find&quot;, params$cellranger_count_dir, &quot;-maxdepth 2 -type f -regex &#39;.*/sce[.]rds$&#39;&quot;), intern = TRUE) %&gt;% sort
+names(sce_files) &lt;- sce_files %&gt;% dirname %&gt;% basename</code></pre>
+<p>Load perCellQCMetrics from SCE files</p>
+<pre class="r"><code>use_sce_file &lt;- sce_files[1]
+cell_qc_metrics &lt;- foreach(use_sce_file = sce_files, .combine = rbind) %do% {
+  sce &lt;- readRDS(use_sce_file)
+  colData(sce)
+} %&gt;% data.frame
+rm(sce)</code></pre>
+</div>
+<div id="quality-control-by-batch" class="section level2" number="5">
+<h2><span class="header-section-number">5</span> Quality control (by
+batch)</h2>
+<div id="selected-qc-metrics" class="section level3" number="5.1">
+<h3><span class="header-section-number">5.1</span> Selected QC
+metrics</h3>
+<p>We identify low-quality cells using the following QC metrics :</p>
+<ul>
+<li>Library size : the total sum of UMI counts across all relevant
+features. Cells with small library sizes are of low quality as the RNA
+has been lost at some point during library preparation.</li>
+<li>Number of detected features : number of genes with non-zero counts
+for that cell. Any cell with very few expressed genes is likely to be of
+poor quality as the diverse transcript population has not been
+successfully captured.</li>
+<li>Proportion of mitochondrial genes : High proportions are indicative
+of poor-quality cells (Islam et al. 2014; Ilicic et al. 2016),
+presumably because of the loss of cytoplasmic RNA from perforated
+cells.</li>
+</ul>
+</div>
+<div id="detect-low-quality-cells" class="section level3" number="5.2">
+<h3><span class="header-section-number">5.2</span> Detect low quality
+cells</h3>
+<p>We use adaptive thresholds for each selected QC metrics. This assumes
+that most of the dataset consists of high quality cells and identify
+cells that are outliers for the selected QC metrics based on the median
+absolute deviation (MAD) from the median value of each metric across all
+cells. By default, we consider a value to be an outlier if it is more
+than 3 MADs from the median in the “problematic” direction. This is
+loosely motivated by the fact that such a filter will retain 99% of
+non-outlier values that follow a normal distribution.</p>
+<p>In cases were multiple batches are involved, each with different
+sequencing coverage, we should consider to apply the adaptive threshold
+to each batch separately. That said, the use of batch= involves the
+stronger assumption that most cells in each batch are of high quality.
+If an entire batch failed, outlier detection will not be able to act as
+an appropriate QC filter for that batch. In such cases, it is better to
+compute a shared median and MAD from the other batches and use those
+estimates to obtain an appropriate filter threshold for cells in the
+problematic batches.</p>
+<pre class="r"><code>discard_reasons &lt;-  perCellQCFilters(
+  cell_qc_metrics,
+  sum.field = &quot;sum&quot;,
+  detected.field = &quot;detected&quot;,
+  sub.fields = c(&quot;subsets_Mito_percent&quot;),
+  batch=cell_qc_metrics$Sample,
+  nmads = 3
+)
+cell_qc_metrics &lt;- cbind(dplyr::select(cell_qc_metrics, Sample:total), discard_reasons)
+
+thresholds &lt;- cbind(
+  `Library size` = attr(discard_reasons$low_lib_size, &quot;thresholds&quot;)[&#39;lower&#39;,],
+  `Number of detected features size` = attr(discard_reasons$low_n_features, &quot;thresholds&quot;)[&#39;lower&#39;,],
+  `Mitochondrial proportion` = attr(discard_reasons$high_subsets_Mito_percent, &quot;thresholds&quot;)[&#39;higher&#39;,]
+) %&gt;% data.frame(check.names = FALSE) %&gt;% rownames_to_column(&#39;Sample&#39;)
+
+res &lt;- rbind(
+  c(`Reason` = &#39;Low library size&#39;, `Number of cells` = sum(discard_reasons$low_lib_size)),
+  c(`Reason` = &#39;Low number of detected features size&#39;, `Number of cells` = sum(discard_reasons$low_n_features)),
+  c(`Reason` = &#39;High mitochondrial proportion&#39;, `Number of cells` = sum(discard_reasons$high_subsets_Mito_percent)),
+  c(`Reason` = &#39;Total removed&#39;, `Number of cells` = sum(discard_reasons$discard)),
+  c(`Reason` = &#39;Cells remaining&#39;, `Number of cells` = sum(!discard_reasons$discard))
+) %&gt;% data.frame(check.names = FALSE) %&gt;% 
+  mutate(
+    `Number of cells` = as.numeric(`Number of cells`),
+    `Percentage of cells` = round(100*(`Number of cells` / nrow(cell_qc_metrics)), 2)
+  ) %&gt;% 
+  dplyr::select(Reason, `Number of cells`, `Percentage of cells`)
+
+
+res %&gt;%
+  kbl(caption = &#39;Number of cells removed&#39;) %&gt;%
+  kable_paper(bootstrap_options = c(&quot;striped&quot;, &quot;hover&quot;, &quot;condensed&quot;), full_width = F)</code></pre>
+<table class=" lightable-paper" style="font-family: &quot;Arial Narrow&quot;, arial, helvetica, sans-serif; width: auto !important; margin-left: auto; margin-right: auto;">
+<caption>
+Number of cells removed
+</caption>
+<thead>
+<tr>
+<th style="text-align:left;">
+Reason
+</th>
+<th style="text-align:right;">
+Number of cells
+</th>
+<th style="text-align:right;">
+Percentage of cells
+</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td style="text-align:left;">
+Low library size
+</td>
+<td style="text-align:right;">
+0
+</td>
+<td style="text-align:right;">
+0.00
+</td>
+</tr>
+<tr>
+<td style="text-align:left;">
+Low number of detected features size
+</td>
+<td style="text-align:right;">
+59
+</td>
+<td style="text-align:right;">
+0.43
+</td>
+</tr>
+<tr>
+<td style="text-align:left;">
+High mitochondrial proportion
+</td>
+<td style="text-align:right;">
+716
+</td>
+<td style="text-align:right;">
+5.22
+</td>
+</tr>
+<tr>
+<td style="text-align:left;">
+Total removed
+</td>
+<td style="text-align:right;">
+763
+</td>
+<td style="text-align:right;">
+5.56
+</td>
+</tr>
+<tr>
+<td style="text-align:left;">
+Cells remaining
+</td>
+<td style="text-align:right;">
+12954
+</td>
+<td style="text-align:right;">
+94.44
+</td>
+</tr>
+</tbody>
+</table>
+<pre class="r"><code>tab1 &lt;- tableby(Sample ~ low_lib_size + low_n_features + high_subsets_Mito_percent + discard, data=cell_qc_metrics)
+mylabels &lt;- list(low_lib_size = &quot;Low UMI counts&quot;, low_n_features = &quot;Low number of detected features size&quot;, high_subsets_Mito_percent = &quot;High mitochondrial proportion&quot;, discard = &quot;Total removed&quot;)
+sum_tab &lt;- summary(tab1, labelTranslations = mylabels, cat.simplify=TRUE) %&gt;% as.data.frame
+colnames(sum_tab)[1] &lt;- &#39;var&#39;
+sum_tab &lt;- sum_tab %&gt;% column_to_rownames(&#39;var&#39;) %&gt;% t()
+sum_tab %&gt;%
+  kbl(caption = &#39;Number of cells removed per sample&#39;) %&gt;%
+  kable_paper(bootstrap_options = c(&quot;striped&quot;, &quot;hover&quot;, &quot;condensed&quot;), full_width = F)</code></pre>
+<table class=" lightable-paper" style="font-family: &quot;Arial Narrow&quot;, arial, helvetica, sans-serif; width: auto !important; margin-left: auto; margin-right: auto;">
+<caption>
+Number of cells removed per sample
+</caption>
+<thead>
+<tr>
+<th style="text-align:left;">
+</th>
+<th style="text-align:left;">
+<strong>Low UMI counts</strong>
+</th>
+<th style="text-align:left;">
+<strong>Low number of detected features size</strong>
+</th>
+<th style="text-align:left;">
+<strong>High mitochondrial proportion</strong>
+</th>
+<th style="text-align:left;">
+<strong>Total removed</strong>
+</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td style="text-align:left;">
+huNSG_ms3_Plate_4120_1 (N=13717)
+</td>
+<td style="text-align:left;">
+0 (0.0%)
+</td>
+<td style="text-align:left;">
+59 (0.4%)
+</td>
+<td style="text-align:left;">
+716 (5.2%)
+</td>
+<td style="text-align:left;">
+763 (5.6%)
+</td>
+</tr>
+<tr>
+<td style="text-align:left;">
+Total (N=13717)
+</td>
+<td style="text-align:left;">
+0 (0.0%)
+</td>
+<td style="text-align:left;">
+59 (0.4%)
+</td>
+<td style="text-align:left;">
+716 (5.2%)
+</td>
+<td style="text-align:left;">
+763 (5.6%)
+</td>
+</tr>
+</tbody>
+</table>
+<pre class="r"><code>thresholds %&gt;%
+  kbl(caption = &#39;Thresholds applied by batch&#39;) %&gt;%
+  kable_paper(bootstrap_options = c(&quot;striped&quot;, &quot;hover&quot;, &quot;condensed&quot;), full_width = F)</code></pre>
+<table class=" lightable-paper" style="font-family: &quot;Arial Narrow&quot;, arial, helvetica, sans-serif; width: auto !important; margin-left: auto; margin-right: auto;">
+<caption>
+Thresholds applied by batch
+</caption>
+<thead>
+<tr>
+<th style="text-align:left;">
+Sample
+</th>
+<th style="text-align:right;">
+Library size
+</th>
+<th style="text-align:right;">
+Number of detected features size
+</th>
+<th style="text-align:right;">
+Mitochondrial proportion
+</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td style="text-align:left;">
+1
+</td>
+<td style="text-align:right;">
+458.0699
+</td>
+<td style="text-align:right;">
+392.5895
+</td>
+<td style="text-align:right;">
+4.55839
+</td>
+</tr>
+</tbody>
+</table>
+<pre class="r"><code>tab_all &lt;- cell_qc_metrics %&gt;% 
+  group_by(Sample) %&gt;% 
+  summarise(`Library size` = median(sum), `Number of detected features` = median(detected), `Mitochondrial proportion` = median(subsets_Mito_percent))
+tab_pass &lt;- cell_qc_metrics %&gt;% 
+  filter(!discard) %&gt;% 
+  group_by(Sample) %&gt;% 
+  summarise(`Library size` = median(sum), `Number of detected features` = median(detected), `Mitochondrial proportion` = median(subsets_Mito_percent))
+
+tab_full &lt;- full_join(tab_all, tab_pass, by = &#39;Sample&#39;)
+
+colnames(tab_full) &lt;- colnames(tab_full) %&gt;% gsub(&quot;\\.[xy]&quot;, &quot;&quot;, .)
+
+tab_full %&gt;%
+  kbl(caption = &#39;Median values for each quality metric&#39;) %&gt;%
+  kable_paper(bootstrap_options = c(&quot;striped&quot;, &quot;hover&quot;, &quot;condensed&quot;), full_width = F) %&gt;%
+  add_header_above(c(&quot; &quot;, &quot;All cells&quot; = 3, &quot;Filtered&quot; = 3))</code></pre>
+<table class=" lightable-paper" style="font-family: &quot;Arial Narrow&quot;, arial, helvetica, sans-serif; width: auto !important; margin-left: auto; margin-right: auto;">
+<caption>
+Median values for each quality metric
+</caption>
+<thead>
+<tr>
+<th style="empty-cells: hide;" colspan="1">
+</th>
+<th style="padding-bottom:0; padding-left:3px;padding-right:3px;text-align: center; " colspan="3">
+<div style="border-bottom: 1px solid #00000020; padding-bottom: 5px; ">
+All cells
+</div>
+</th>
+<th style="padding-bottom:0; padding-left:3px;padding-right:3px;text-align: center; " colspan="3">
+<div style="border-bottom: 1px solid #00000020; padding-bottom: 5px; ">
+Filtered
+</div>
+</th>
+</tr>
+<tr>
+<th style="text-align:left;">
+Sample
+</th>
+<th style="text-align:right;">
+Library size
+</th>
+<th style="text-align:right;">
+Number of detected features
+</th>
+<th style="text-align:right;">
+Mitochondrial proportion
+</th>
+<th style="text-align:right;">
+Library size
+</th>
+<th style="text-align:right;">
+Number of detected features
+</th>
+<th style="text-align:right;">
+Mitochondrial proportion
+</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td style="text-align:left;">
+huNSG_ms3_Plate_4120_1
+</td>
+<td style="text-align:right;">
+3511
+</td>
+<td style="text-align:right;">
+1844
+</td>
+<td style="text-align:right;">
+1.610905
+</td>
+<td style="text-align:right;">
+3648.5
+</td>
+<td style="text-align:right;">
+1901
+</td>
+<td style="text-align:right;">
+1.551829
+</td>
+</tr>
+</tbody>
+</table>
+</div>
+<div id="tresholds" class="section level3" number="5.3">
+<h3><span class="header-section-number">5.3</span> Tresholds</h3>
+<pre class="r"><code>thresholds %&gt;%
+  kbl(caption = &#39;Thresholds applied by batch&#39;) %&gt;%
+  kable_paper(bootstrap_options = c(&quot;striped&quot;, &quot;hover&quot;, &quot;condensed&quot;), full_width = F)</code></pre>
+<table class=" lightable-paper" style="font-family: &quot;Arial Narrow&quot;, arial, helvetica, sans-serif; width: auto !important; margin-left: auto; margin-right: auto;">
+<caption>
+Thresholds applied by batch
+</caption>
+<thead>
+<tr>
+<th style="text-align:left;">
+Sample
+</th>
+<th style="text-align:right;">
+Library size
+</th>
+<th style="text-align:right;">
+Number of detected features size
+</th>
+<th style="text-align:right;">
+Mitochondrial proportion
+</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td style="text-align:left;">
+1
+</td>
+<td style="text-align:right;">
+458.0699
+</td>
+<td style="text-align:right;">
+392.5895
+</td>
+<td style="text-align:right;">
+4.55839
+</td>
+</tr>
+</tbody>
+</table>
+<pre class="r"><code>thresholds %&gt;% 
+  pivot_longer(-Sample, values_to = &#39;Threshold&#39;) %&gt;% 
+  ggplot(aes(Sample, Threshold)) +
+  geom_col() +
+  facet_wrap(vars(name), ncol = 1, scales = &#39;free_y&#39;) +
+  theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1)) +
+  labs(
+    x = &#39;&#39;,
+    title = &#39;Thresholds applied by batch&#39;
+  )</code></pre>
+</div>
+<div id="diagnostic-plots" class="section level3" number="5.4">
+<h3><span class="header-section-number">5.4</span> Diagnostic plots</h3>
+<pre class="r"><code>cell_qc_metrics %&gt;% 
+  arrange(discard) %&gt;% 
+  ggplot(aes(Sample, sum, color = discard)) + 
+  geom_violin(colour = &quot;gray60&quot;, alpha = 0.2, scale = &quot;width&quot;, width = 0.8) + 
+  geom_quasirandom(width=0.4, groupOnX=TRUE, bandwidth=1, size = 1, alpha = 0.4) +
+  # geom_hline(yintercept = attr(discard_reasons$low_lib_size, &quot;thresholds&quot;)[[&#39;lower&#39;]], lty = 3) + 
+  scale_color_OkabeIto(order = c(2, 1)) +
+  scale_y_log10() +
+  theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1)) +
+  labs(
+    x = &#39;&#39;,
+    y = &#39;UMIs counts&#39;,
+    title = &#39;Number of UMIs&#39;
+  )</code></pre>
+<p><img src="figure/nsg-normal-10x_rnaseq-qc.Rmd/qc-metrics-fig-sum-1.png" width="4320" style="display: block; margin: auto;" /></p>
+<pre class="r"><code>cell_qc_metrics %&gt;% 
+  arrange(discard) %&gt;% 
+  ggplot(aes(Sample, detected, color = discard)) + 
+  geom_violin(colour = &quot;gray60&quot;, alpha = 0.2, scale = &quot;width&quot;, width = 0.8) + 
+  geom_quasirandom(width=0.4, groupOnX=TRUE, bandwidth=1, size = 1, alpha = 0.4) +
+  # geom_hline(yintercept = attr(discard_reasons$low_n_features, &quot;thresholds&quot;)[[&#39;lower&#39;]], lty = 3) + 
+  scale_color_OkabeIto(order = c(2, 1)) +
+  scale_y_log10() +
+  theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1)) +
+  labs(
+    x = &#39;&#39;,
+    y = &#39;Detected features&#39;,
+    title = &#39;Number of genes&#39;
+  )</code></pre>
+<p><img src="figure/nsg-normal-10x_rnaseq-qc.Rmd/qc-metrics-fig-detected-1.png" width="4320" style="display: block; margin: auto;" /></p>
+<pre class="r"><code>cell_qc_metrics %&gt;% 
+  arrange(discard) %&gt;% 
+  ggplot(aes(Sample, subsets_Mito_percent, color = discard)) + 
+  geom_violin(colour = &quot;gray60&quot;, alpha = 0.2, scale = &quot;width&quot;, width = 0.8) + 
+  geom_quasirandom(width=0.4, groupOnX=TRUE, bandwidth=1, size = 1, alpha = 0.4) +
+  # geom_hline(yintercept = attr(discard_reasons$high_subsets_Mito_percent, &quot;thresholds&quot;)[[&#39;higher&#39;]], lty = 3) + 
+  scale_color_OkabeIto(order = c(2, 1)) +
+  theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1)) +
+  labs(
+    x = &#39;&#39;,
+    y = &#39;Percentage of mitochondrial genes&#39;,
+    title = &#39;Mitochondrial proportion&#39;
+  )</code></pre>
+<p><img src="figure/nsg-normal-10x_rnaseq-qc.Rmd/qc-metrics-fig-subsets_Mito_percent-1.png" width="4320" style="display: block; margin: auto;" /></p>
+<pre class="r"><code>cell_qc_metrics %&gt;% 
+  arrange(discard) %&gt;% 
+  ggplot(aes(Sample, subsets_Ribo_percent, color = discard)) + 
+  geom_violin(colour = &quot;gray60&quot;, alpha = 0.2, scale = &quot;width&quot;, width = 0.8) + 
+  geom_quasirandom(width=0.4, groupOnX=TRUE, bandwidth=1, size = 1, alpha = 0.4) +
+  scale_color_OkabeIto(order = c(2, 1)) +
+  theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1)) +
+  labs(
+    x = &#39;&#39;,
+    y = &#39;Percentage of ribosomal genes&#39;,
+    title = &#39;Ribosomal proportion&#39;
+  )</code></pre>
+<p><img src="figure/nsg-normal-10x_rnaseq-qc.Rmd/qc-metrics-fig-subsets_Ribo_percent-1.png" width="4320" style="display: block; margin: auto;" /></p>
+<pre class="r"><code>cell_qc_metrics %&gt;% 
+  # arrange(discard) %&gt;% 
+  ggplot(aes(sum, subsets_Mito_percent, color = discard)) + 
+  geom_point(alpha = 0.3, size = 1) +
+  scale_color_OkabeIto(order = c(2, 1)) +
+  labs(
+    x = &#39;UMIs counts&#39;,
+    y = &#39;Percentage of mitochondrial genes&#39;
+  )</code></pre>
+<p><img src="figure/nsg-normal-10x_rnaseq-qc.Rmd/qc-metrics-fig-sum_vs_mito-1.png" width="2100" style="display: block; margin: auto;" /></p>
+<pre class="r"><code>cell_qc_metrics %&gt;% 
+  # arrange(discard) %&gt;% 
+  ggplot(aes(detected, subsets_Mito_percent, color = discard)) + 
+  geom_point(alpha = 0.3, size = 1) +
+  scale_color_OkabeIto(order = c(2, 1)) +
+  labs(
+    x = &#39;Detected features&#39;,
+    y = &#39;Percentage of mitochondrial genes&#39;
+  )</code></pre>
+<p><img src="figure/nsg-normal-10x_rnaseq-qc.Rmd/qc-metrics-fig-detected_vs_mito-1.png" width="2100" style="display: block; margin: auto;" /></p>
+<pre class="r"><code>cell_qc_metrics %&gt;% 
+  # arrange(discard) %&gt;% 
+  ggplot(aes(sum, detected, color = discard)) + 
+  geom_point(alpha = 0.3, size = 1) +
+  scale_color_OkabeIto(order = c(2, 1)) +
+  labs(
+    x = &#39;UMIs counts&#39;,
+    y = &#39;Detected features&#39;
+  ) + 
+  geom_smooth()</code></pre>
+<p><img src="figure/nsg-normal-10x_rnaseq-qc.Rmd/qc-metrics-fig-sum_vs_detected-1.png" width="2100" style="display: block; margin: auto;" /></p>
+</div>
+<div id="remove-cells" class="section level3" number="5.5">
+<h3><span class="header-section-number">5.5</span> Remove cells</h3>
+<pre class="r"><code>use_sce_file &lt;- sce_files[1]
+r.rm &lt;- foreach(use_sce_file = sce_files) %do% {
+  sce &lt;- readRDS(use_sce_file)
+  filtered_sce_file &lt;- gsub(&quot;sce.rds&quot;, &quot;sce_filtered.rds&quot;, use_sce_file)
+  x &lt;- colData(sce) %&gt;% data.frame %&gt;% left_join(cell_qc_metrics %&gt;% dplyr::select(Sample, Barcode, discard))
+  # Add GFP and mCherry expression to colData
+  # colData(sce) &lt;- cbind(data.frame(colData(sce)), counts(sce[c(&quot;GFP&quot;, &quot;mCherry&quot;),]) %&gt;% as.matrix %&gt;% t) %&gt;% DataFrame()
+  sce &lt;- sce[,!x$discard]
+  saveRDS(sce, filtered_sce_file)
+}
+rm(sce)
+sce_filtered_files &lt;- system(paste(&quot;find&quot;, params$cellranger_count_dir, &quot;-maxdepth 2 -type f -regex &#39;.*/sce_filtered[.]rds$&#39;&quot;), intern = TRUE) %&gt;% sort
+names(sce_filtered_files) &lt;- names(sce_files)</code></pre>
+</div>
+</div>
+<div id="demultiplexing-with-hashtag-oligos-htos-and-doublet-detection"
+class="section level2" number="6">
+<h2><span class="header-section-number">6</span> Demultiplexing with
+hashtag oligos (HTOs) and doublet detection</h2>
+<p>Demultiplexing results based on antibodies enrichment and filtering
+of the data based on HTO assignment. Here we filter out (1) cells with
+two HTO assigned (doublets) and (2) cells with HTO present that was not
+used in the experiment.</p>
+<p>One limitation of removing doublets based on HTO is that doublets
+marked with the same HTO are not detected. Here we are also marking
+cells who have a similar profile to doublets (guilt by association)
+using scDblFinder::recoverDoublets. While this might not have an effect
+in samples with cancer only (only one cell type), in an heterogeneous
+population like the niche, predicted doublets implying multiple cell
+types are still possible.</p>
+<pre class="r"><code>sce_sample_name &lt;- names(sce_filtered_files)[1]
+dmx_stats &lt;- foreach(sce_sample_name = names(sce_filtered_files), .combine = rbind) %do% {
+  cat(&quot;###&quot;, sce_sample_name, &quot;\n\n&quot;) 
+  use_sce_file &lt;- sce_filtered_files[[sce_sample_name]]
+  sce &lt;- readRDS(use_sce_file)
+  sce$sample_id &lt;- paste(sce$Sample, sce$Barcode, sep = &#39;_&#39;)
+  colnames(sce) &lt;- sce$sample_id
+  
+  feat_mat &lt;- counts(sce[rowData(sce)$type == &#39;Gene Expression&#39;,])
+  hto_mat &lt;- counts(sce[rowData(sce)$type == &#39;Antibody Capture&#39;,])
+  colnames(feat_mat) &lt;- sce$sample_id 
+  colnames(hto_mat) &lt;- sce$sample_id 
+  
+  # Generate Seurat object
+  data_hashtag &lt;- CreateSeuratObject(counts = feat_mat)
+  # Normalize RNA data with log normalization
+  data_hashtag &lt;- NormalizeData(data_hashtag, verbose = FALSE)
+  # Find and scale variable features
+  data_hashtag &lt;- FindVariableFeatures(data_hashtag, selection.method = &quot;mean.var.plot&quot;, verbose = FALSE)
+  data_hashtag &lt;- ScaleData(data_hashtag, features = VariableFeatures(data_hashtag), verbose = FALSE)
+
+  # Adding HTO data as an independent assay
+  data_hashtag[[&quot;HTO&quot;]] &lt;- CreateAssayObject(counts = hto_mat)
+  # Normalize HTO data, here we use centered log-ratio (CLR) transformation
+  data_hashtag &lt;- NormalizeData(data_hashtag, assay = &quot;HTO&quot;, normalization.method = &quot;CLR&quot;, verbose = FALSE)
+
+  # Demultiplex cells based on HTO enrichment
+  data_hashtag &lt;- HTODemux(data_hashtag, assay = &quot;HTO&quot;, positive.quantile = 0.99, kfunc = &quot;kmeans&quot;, verbose = FALSE)
+  
+  # Group cells based on the max HTO signal
+  # cat(&quot;#### HTO enrichment\n\n&quot;)
+  # cat(&quot;Visualize enrichment for selected HTOs with ridge plots\n\n&quot;)
+  # Idents(data_hashtag) &lt;- &quot;HTO_maxID&quot;
+  # RidgePlot(data_hashtag, assay = &quot;HTO&quot;, features = rownames(data_hashtag[[&quot;HTO&quot;]]), ncol = 2) %&gt;% print
+  # cat(&quot;\n\n&quot;)
+  
+  # Compare number of UMIs for singlets, doublets and negative cells
+  # cat(&quot;#### UMIs comparison\n\n&quot;) 
+  # cat(&quot;Compare number of UMIs for singlets, doublets and negative cells\n\n&quot;)
+  # Idents(data_hashtag) &lt;- &quot;HTO_classification.global&quot;
+  # VlnPlot(data_hashtag, features = &quot;nCount_RNA&quot;, pt.size = 0.1, log = TRUE) %&gt;% print
+  # cat(&quot;\n\n&quot;)
+  
+  # Compare number of UMIs for singlets, doublets and negative cells
+  cat(&quot;#### HTO heatmap\n\nHeatmap with the expression of the antibodies across the cells. The Negative barcodes have a negligible background signal for any of the antobodies. Multiplets express more than one antibody.\n\n&quot;) 
+  HTOHeatmap(data_hashtag, assay = &quot;HTO&quot;, ncells = 5000) %&gt;% print
+  cat(&quot;\n\n&quot;)
+  
+  # cat(&quot;#### HTO clustering\n\n&quot;) 
+  # cat(&quot;Generate a two dimensional tSNE embedding for HTOs.\n\n&quot;)
+  # # Calculate a tSNE embedding of the HTO data
+  # data_hashtag_HTO &lt;- subset(data_hashtag, idents = &quot;Negative&quot;, invert = TRUE)
+  # DefaultAssay(data_hashtag_HTO) &lt;- &quot;HTO&quot;
+  # data_hashtag_HTO &lt;- ScaleData(data_hashtag_HTO, features = rownames(data_hashtag_HTO), verbose = FALSE)
+  # data_hashtag_HTO &lt;- RunPCA(data_hashtag_HTO, features = rownames(data_hashtag_HTO), reduction.name = &quot;pcahto&quot;, reduction.key = &quot;pcahto_&quot;, approx = FALSE, verbose = FALSE)
+  # data_hashtag_HTO &lt;- RunTSNE(data_hashtag_HTO, reduction = &quot;pcahto&quot;, reduction.key = &quot;htoTSNE_&quot;, reduction.name = &quot;tsne_hto&quot;, check_duplicates = FALSE)
+  # DimPlot(data_hashtag_HTO, group.by = &quot;hash.ID&quot;, cols = palette_OkabeIto[c(6, 1:5, 7, 8)]) %&gt;% print
+  # cat(&quot;\n\n&quot;)
+  # rm(data_hashtag_HTO)
+  
+  # cat(&quot;#### RNA clustering,\n\n&quot;) 
+  # cat(&quot;Cluster and visualize cells using the usual scRNA-seq workflow, and examine for the potential presence of batch effects. Using top-1000 features for clustering.\n\n&quot;)
+  # data_hashtag_singlet &lt;- subset(data_hashtag, idents = &quot;Singlet&quot;)
+  # # Run PCA on most variable features
+  # data_hashtag_singlet &lt;- FindVariableFeatures(data_hashtag_singlet, selection.method = &quot;mean.var.plot&quot;, verbose = FALSE)
+  # # Scaling RNA data, we only scale the variable features here for efficiency
+  # data_hashtag_singlet &lt;- ScaleData(data_hashtag_singlet, features = VariableFeatures(data_hashtag_singlet), verbose = FALSE)
+  # # Run PCA
+  # data_hashtag_singlet &lt;- RunPCA(data_hashtag_singlet, features = VariableFeatures(data_hashtag_singlet), verbose = FALSE)
+  # # We select the top 10 PCs for clustering and tSNE based on PCElbowPlot
+  # # data_hashtag_singlet &lt;- RunTSNE(data_hashtag_singlet, reduction = &quot;pca&quot;, dims = 1:10, verbose = FALSE)
+  # data_hashtag_singlet &lt;- RunUMAP(data_hashtag_singlet, reduction = &quot;pca&quot;, dims = 1:10, verbose = FALSE)
+  # # Projecting singlet identities on TSNE visualization
+  # DimPlot(data_hashtag_singlet, group.by = &quot;HTO_classification&quot;, cols = palette_OkabeIto) %&gt;% print
+  # cat(&quot;\n\n&quot;)
+  # rm(data_hashtag_singlet)
+  
+  # Data post-processing
+  # Annotate sce with HTO classification
+  colData(sce) &lt;- colData(sce) %&gt;% 
+    data.frame %&gt;% 
+    left_join(data_hashtag@meta.data %&gt;% rownames_to_column(&#39;sample_id&#39;) %&gt;%  dplyr::select(sample_id, starts_with(&quot;HTO&quot;))) %&gt;% 
+    mutate(HTO_doublet = HTO_classification.global == &#39;Doublet&#39;) %&gt;% 
+    dplyr::select(-sample_id) %&gt;% 
+    DataFrame
+  
+  # Detect doublets using guilt by association for unmarked doublets
+  cat(&quot;#### Additional doublet detections\n\n&quot;)
+  cat(&quot;One limitation of removing doublets based on HTO is that doublets marked with the same HTO are not detected. Here we are also marking cells who have a similar profile to doublets (guilt by association) using scDblFinder::recoverDoublets. While this might not have an effect in samples with cancer only (only one cell type), in an heterogeneous population like the niche, predicted doublets implying multiple cell types are still possible.\n\n&quot;)
+  sce.hash &lt;- logNormCounts(sce)
+  dec.hash &lt;- modelGeneVar(sce.hash)
+  top.hash &lt;- getTopHVGs(dec.hash, n=1000)
+  sce.hash &lt;- runPCA(sce.hash, subset_row=top.hash, ncomponents=20)
+  hashed.doublets &lt;- recoverDoublets(sce.hash, use.dimred=&quot;PCA&quot;, doublets=sce.hash$HTO_doublet, samples=table(sce.hash$HTO_maxID))
+  sce.hash$proportion &lt;- hashed.doublets$proportion
+  sce.hash$predicted &lt;- hashed.doublets$predicted
+  sce.hash &lt;- runTSNE(sce.hash, dimred=&quot;PCA&quot;)
+  
+  gridExtra::grid.arrange(
+    plotTSNE(sce.hash, colour_by=&quot;proportion&quot;) + ggtitle(&quot;Doublet proportions&quot;),
+    plotTSNE(sce.hash, colour_by=&quot;HTO_doublet&quot;, point_alpha = 0.6) + ggtitle(&quot;Known doublets&quot;),
+    ggcells(sce.hash) +
+        geom_point(aes(x=TSNE.1, y=TSNE.2), color=&quot;grey&quot;) +
+        geom_point(aes(x=TSNE.1, y=TSNE.2), color=&quot;red&quot;, 
+            data=function(x) x[x$predicted,]) +
+        ggtitle(&quot;Predicted intra-sample doublets&quot;),
+    ncol=2        
+  )
+  cat(&quot;\n\n&quot;)
+  
+  rm(sce.hash)
+  sce$recoverDoublets.proportion &lt;- hashed.doublets$proportion
+  sce$recoverDoublets.predicted &lt;- hashed.doublets$predicted
+  
+  # Add HTO annotation
+  colData(sce) &lt;- colData(sce) %&gt;% data.frame %&gt;%
+    left_join(hash_annot %&gt;% rename(&quot;fb_id&quot; = &quot;HTO_classification&quot;)) %&gt;%
+    DataFrame
+  
+  # Filter sce, selecting only singlets
+  sce_f &lt;- sce[,sce$HTO_classification.global == &#39;Singlet&#39; &amp; !sce$recoverDoublets.predicted]
+
+  # Filter sce, removing cells without cell type. It can be the case for hash detected and not used
+  # sce_f &lt;- sce_f[,!is.na(sce_f$cell_type)]
+  
+  # Save filtered SCE
+  dmx_sce_file &lt;- gsub(&quot;sce_filtered.rds&quot;, &quot;sce_dmx.rds&quot;, use_sce_file)
+  saveRDS(sce_f, dmx_sce_file)
+  
+  # Clean data
+  rm(sce_f)
+  
+  # Return demultiplexing stats
+  colData(sce) %&gt;% data.frame
+  
+
+}</code></pre>
+<div id="hunsg_ms3_plate_4120_1" class="section level3" number="6.1">
+<h3><span class="header-section-number">6.1</span>
+huNSG_ms3_Plate_4120_1</h3>
+<div id="hto-heatmap" class="section level4" number="6.1.1">
+<h4><span class="header-section-number">6.1.1</span> HTO heatmap</h4>
+<p>Heatmap with the expression of the antibodies across the cells. The
+Negative barcodes have a negligible background signal for any of the
+antobodies. Multiplets express more than one antibody.</p>
+<p><img src="figure/nsg-normal-10x_rnaseq-qc.Rmd/dmx-hto-1.png" width="6120" style="display: block; margin: auto;" /></p>
+</div>
+<div id="additional-doublet-detections" class="section level4"
+number="6.1.2">
+<h4><span class="header-section-number">6.1.2</span> Additional doublet
+detections</h4>
+<p>One limitation of removing doublets based on HTO is that doublets
+marked with the same HTO are not detected. Here we are also marking
+cells who have a similar profile to doublets (guilt by association)
+using scDblFinder::recoverDoublets. While this might not have an effect
+in samples with cancer only (only one cell type), in an heterogeneous
+population like the niche, predicted doublets implying multiple cell
+types are still possible.</p>
+<p><img src="figure/nsg-normal-10x_rnaseq-qc.Rmd/dmx-hto-2.png" width="6120" style="display: block; margin: auto;" /></p>
+</div>
+</div>
+</div>
+<div id="hto-classification" class="section level2" number="7">
+<h2><span class="header-section-number">7</span> HTO classification</h2>
+<pre class="r"><code>dmx_stats_tab &lt;- dmx_stats %&gt;% 
+  mutate(singlets_final = ifelse(HTO_classification.global == &#39;Singlet&#39; &amp; recoverDoublets.predicted == FALSE, TRUE, FALSE))
+
+tab1 &lt;- tableby(Sample ~ HTO_classification.global + recoverDoublets.predicted + singlets_final, data=dmx_stats_tab, cat.simplify=TRUE)
+mylabels &lt;- list(HTO_classification.global = &quot;HTO classification&quot;, recoverDoublets.predicted = &quot;Predicted doublets&quot;, singlets_final = &quot;Final number of cells&quot;)
+res_tab &lt;- summary(tab1, labelTranslations = mylabels) %&gt;% as.data.frame
+colnames(res_tab)[1] &lt;- &#39;var&#39;
+res_tab &lt;- res_tab %&gt;% column_to_rownames(&#39;var&#39;) %&gt;% t()
+colnames(res_tab) &lt;- colnames(res_tab) %&gt;% gsub(&quot;.*;&quot;, &quot;&quot;, .) %&gt;% gsub(&quot;\\*\\*&quot;, &quot;&quot;, .)
+res_tab %&gt;%
+  kbl(caption = &#39;Classification of cells based on HTO&#39;) %&gt;%
+  kable_paper(bootstrap_options = c(&quot;striped&quot;, &quot;hover&quot;, &quot;condensed&quot;), full_width = F)</code></pre>
+<table class=" lightable-paper" style="font-family: &quot;Arial Narrow&quot;, arial, helvetica, sans-serif; width: auto !important; margin-left: auto; margin-right: auto;">
+<caption>
+Classification of cells based on HTO
+</caption>
+<thead>
+<tr>
+<th style="text-align:left;">
+</th>
+<th style="text-align:left;">
+HTO classification
+</th>
+<th style="text-align:left;">
+Doublet
+</th>
+<th style="text-align:left;">
+Negative
+</th>
+<th style="text-align:left;">
+Singlet
+</th>
+<th style="text-align:left;">
+Predicted doublets
+</th>
+<th style="text-align:left;">
+Final number of cells
+</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td style="text-align:left;">
+huNSG_ms3_Plate_4120_1 (N=12954)
+</td>
+<td style="text-align:left;">
+</td>
+<td style="text-align:left;">
+1507 (11.6%)
+</td>
+<td style="text-align:left;">
+369 (2.8%)
+</td>
+<td style="text-align:left;">
+11078 (85.5%)
+</td>
+<td style="text-align:left;">
+313 (2.4%)
+</td>
+<td style="text-align:left;">
+10769 (83.1%)
+</td>
+</tr>
+<tr>
+<td style="text-align:left;">
+Total (N=12954)
+</td>
+<td style="text-align:left;">
+</td>
+<td style="text-align:left;">
+1507 (11.6%)
+</td>
+<td style="text-align:left;">
+369 (2.8%)
+</td>
+<td style="text-align:left;">
+11078 (85.5%)
+</td>
+<td style="text-align:left;">
+313 (2.4%)
+</td>
+<td style="text-align:left;">
+10769 (83.1%)
+</td>
+</tr>
+</tbody>
+</table>
+</div>
+<div id="diagnostic-plots-after-demultiplexing" class="section level2"
+number="8">
+<h2><span class="header-section-number">8</span> Diagnostic plots after
+demultiplexing</h2>
+<p>Diagnostic plots combining all bat</p>
+<pre class="r"><code>sce_dmxfiles &lt;- system(paste(&quot;find&quot;, params$cellranger_count_dir, &quot;-maxdepth 2 -type f -regex &#39;.*/sce_dmx[.]rds$&#39;&quot;), intern = TRUE) %&gt;% sort
+cell_qc_metrics &lt;- foreach(use_sce_file = sce_dmxfiles, .combine = rbind) %do% {
+  sce &lt;- readRDS(use_sce_file)
+  colData(sce)
+} %&gt;% data.frame</code></pre>
+<div id="by-cell-type" class="section level4" number="8.0.1">
+<h4><span class="header-section-number">8.0.1</span> By cell type</h4>
+<pre class="r"><code>cell_qc_metrics %&gt;% 
+  ggplot(aes(Sample, sum, color = cell_type)) + 
+  geom_violin(colour = &quot;gray60&quot;, alpha = 0.2, scale = &quot;width&quot;, width = 0.8) + 
+  geom_quasirandom(width=0.4, groupOnX=TRUE, bandwidth=1, size = 1, alpha = 0.4) +
+  scale_color_OkabeIto(order = c(3, 6)) +
+  scale_y_log10() +
+  theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1)) +
+  labs(
+    x = &#39;&#39;,
+    y = &#39;UMIs counts&#39;,
+    title = &#39;Number of UMIs&#39;
+  )</code></pre>
+<p><img src="figure/nsg-normal-10x_rnaseq-qc.Rmd/dmx-qc-metrics-fig-sum-1.png" width="4320" style="display: block; margin: auto;" /></p>
+<pre class="r"><code>cell_qc_metrics %&gt;% 
+  ggplot(aes(Sample, detected, color = cell_type)) + 
+  geom_violin(colour = &quot;gray60&quot;, alpha = 0.2, scale = &quot;width&quot;, width = 0.8) + 
+  geom_quasirandom(width=0.4, groupOnX=TRUE, bandwidth=1, size = 1, alpha = 0.4) +
+  scale_color_OkabeIto(order = c(3, 6)) +
+  scale_y_log10() +
+  theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1)) +
+  labs(
+    x = &#39;&#39;,
+    y = &#39;Detected features&#39;,
+    title = &#39;Number of genes&#39;
+  )</code></pre>
+<p><img src="figure/nsg-normal-10x_rnaseq-qc.Rmd/dmx-qc-metrics-fig-detected-1.png" width="4320" style="display: block; margin: auto;" /></p>
+<pre class="r"><code>cell_qc_metrics %&gt;% 
+  ggplot(aes(Sample, subsets_Mito_percent, color = cell_type)) + 
+  geom_violin(colour = &quot;gray60&quot;, alpha = 0.2, scale = &quot;width&quot;, width = 0.8) + 
+  geom_quasirandom(width=0.4, groupOnX=TRUE, bandwidth=1, size = 1, alpha = 0.4) +
+  scale_color_OkabeIto(order = c(3, 6)) +
+  theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1)) +
+  labs(
+    x = &#39;&#39;,
+    y = &#39;Percentage of mitochondrial genes&#39;,
+    title = &#39;Mitochondrial proportion&#39;
+  )</code></pre>
+<p><img src="figure/nsg-normal-10x_rnaseq-qc.Rmd/dmx-qc-metrics-fig-subsets_Mito_percent-1.png" width="4320" style="display: block; margin: auto;" /></p>
+</div>
+<div id="by-site-and-mouse-id" class="section level4" number="8.0.2">
+<h4><span class="header-section-number">8.0.2</span> By site and mouse
+ID</h4>
+<pre class="r"><code>cell_qc_metrics %&gt;% 
+  ggplot(aes(site, sum, color = cell_type)) + 
+  geom_violin(colour = &quot;gray60&quot;, alpha = 0.2, scale = &quot;width&quot;, width = 0.8) + 
+  geom_quasirandom(width=0.4, groupOnX=TRUE, bandwidth=1, size = 1, alpha = 0.4) +
+  scale_color_OkabeIto(order = c(3, 6)) +
+  scale_y_log10() +
+  theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1)) +
+  labs(
+    x = &#39;&#39;,
+    y = &#39;UMIs counts&#39;,
+    title = &#39;Number of UMIs&#39;
+  ) +
+  facet_wrap(facets = vars(mouse_id, Sample), scales = &#39;free_x&#39;)</code></pre>
+<p><img src="figure/nsg-normal-10x_rnaseq-qc.Rmd/dmx-qc-metrics-fig-sum-site_mouse-1.png" width="4320" style="display: block; margin: auto;" /></p>
+<pre class="r"><code>cell_qc_metrics %&gt;% 
+  ggplot(aes(site, detected, color = cell_type)) + 
+  geom_violin(colour = &quot;gray60&quot;, alpha = 0.2, scale = &quot;width&quot;, width = 0.8) + 
+  geom_quasirandom(width=0.4, groupOnX=TRUE, bandwidth=1, size = 1, alpha = 0.4) +
+  scale_color_OkabeIto(order = c(3, 6)) +
+  scale_y_log10() +
+  theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1)) +
+  labs(
+    x = &#39;&#39;,
+    y = &#39;Detected features&#39;,
+    title = &#39;Number of genes&#39;
+  ) +
+  facet_wrap(facets = vars(mouse_id, Sample), scales = &#39;free_x&#39;)</code></pre>
+<p><img src="figure/nsg-normal-10x_rnaseq-qc.Rmd/dmx-qc-metrics-fig-detected-site_mouse-1.png" width="4320" style="display: block; margin: auto;" /></p>
+<pre class="r"><code>cell_qc_metrics %&gt;% 
+  ggplot(aes(site, subsets_Mito_percent, color = cell_type)) + 
+  geom_violin(colour = &quot;gray60&quot;, alpha = 0.2, scale = &quot;width&quot;, width = 0.8) + 
+  geom_quasirandom(width=0.4, groupOnX=TRUE, bandwidth=1, size = 1, alpha = 0.4) +
+  scale_color_OkabeIto(order = c(3, 6)) +
+  theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1)) +
+  labs(
+    x = &#39;&#39;,
+    y = &#39;Percentage of mitochondrial genes&#39;,
+    title = &#39;Mitochondrial proportion&#39;
+  ) +
+  facet_wrap(facets = vars(mouse_id, Sample), scales = &#39;free_x&#39;)</code></pre>
+<p><img src="figure/nsg-normal-10x_rnaseq-qc.Rmd/dmx-qc-metrics-fig-subsets_Mito_percent-site_mouse-1.png" width="4320" style="display: block; margin: auto;" /></p>
+</div>
+</div>
+<div id="normalization-variance-modelling-and-cell-cycle-annotation"
+class="section level2" number="9">
+<h2><span class="header-section-number">9</span> Normalization, variance
+modelling and cell cycle annotation</h2>
+<p>Here we perform normalization using scran::quickCluster and
+dimensionality reduction at batch level.</p>
+<pre class="r"><code>sce_dmxfiles &lt;- system(paste(&quot;find&quot;, params$cellranger_count_dir, &quot;-maxdepth 2 -type f -regex &#39;.*/sce_dmx[.]rds$&#39;&quot;), intern = TRUE) %&gt;% sort
+names(sce_dmxfiles) &lt;-sce_dmxfiles %&gt;% dirname %&gt;% basename
+mm.pairs &lt;- readRDS(system.file(&quot;exdata&quot;, &quot;mouse_cycle_markers.rds&quot;, package=&quot;scran&quot;))
+sce_sample_name &lt;- names(sce_dmxfiles)[1]
+for(sce_sample_name in names(sce_dmxfiles)) {
+  cat(&quot;###&quot;, sce_sample_name, &quot;\n\n&quot;) 
+  use_sce &lt;- readRDS(sce_dmxfiles[[sce_sample_name]])
+  use_sce &lt;- use_sce[rowData(use_sce)$type == &#39;Gene Expression&#39;,]
+  # Normalization
+  clust.sce &lt;- quickCluster(use_sce, BPPARAM=BiocParallel::MulticoreParam(params$ncores)) 
+  use_sce &lt;- computeSumFactors(use_sce, cluster=clust.sce, BPPARAM=BiocParallel::MulticoreParam(params$ncores))
+  use_sce &lt;- logNormCounts(use_sce)
+  # Cell cycle assignment
+  rowData(use_sce)$ensembl_gene.version &lt;- rownames(use_sce)
+  rowData(use_sce)$ensembl_gene &lt;-  rowData(use_sce)$ensembl_gene.version %&gt;% gsub(&quot;\\..*&quot;, &quot;&quot;, .)
+  cc_assignments &lt;- cyclone(use_sce, mm.pairs, gene.names=rowData(use_sce)$ensembl_gene, BPPARAM=BiocParallel::MulticoreParam(params$ncores))
+  use_sce$cell_cycle_phase &lt;- cc_assignments$phases
+  colData(use_sce) &lt;- cbind(colData(use_sce), cc_assignments$normalized.scores)
+  # Variance modelling
+  metadata(use_sce)$dec &lt;- modelGeneVar(use_sce)
+  metadata(use_sce)$hvgs &lt;- getTopHVGs(metadata(use_sce)$dec, prop = 0.1)
+  # Dimensionality reduction
+  use_sce &lt;- runPCA(use_sce, subset_row=metadata(use_sce)$hvgs, ncomponents=50, BSPARAM=RandomParam(), BPPARAM=BiocParallel::MulticoreParam(params$ncores))
+  use_sce &lt;- runTSNE(use_sce, dimred=&quot;PCA&quot;, BPPARAM=BiocParallel::MulticoreParam(params$ncores))
+  use_sce &lt;- runUMAP(use_sce, dimred=&quot;PCA&quot;, BPPARAM=BiocParallel::MulticoreParam(params$ncores))
+  g &lt;- buildSNNGraph(use_sce, k=10, use.dimred=&#39;PCA&#39;, BPPARAM=BiocParallel::MulticoreParam(params$ncores))
+  use_sce$cluster_id_batch &lt;- igraph::cluster_walktrap(g)$membership %&gt;% factor
+  
+  cat(&quot;#### TSNE\n\n&quot;) 
+  gridExtra::grid.arrange(
+    plotTSNE(use_sce, colour_by=&quot;cluster_id_batch&quot;, text_by=&quot;cluster_id_batch&quot;, point_alpha = 0.1) + 
+      guides(colour = guide_legend(override.aes = list(alpha = 1, size = 2))) + 
+      ggtitle(&quot;Cluster ID&quot;),
+    plotTSNE(use_sce, colour_by=&quot;site&quot;, point_alpha = 0.1) + 
+      guides(colour = guide_legend(override.aes = list(alpha = 1, size = 2))) + 
+      ggtitle(&quot;Site&quot;),
+    plotTSNE(use_sce, colour_by=&quot;detected&quot;, point_alpha = 0.1) +
+      guides(colour = guide_legend(override.aes = list(alpha = 1, size = 2))) + 
+      ggtitle(&quot;Number of detected features&quot;),
+    plotTSNE(use_sce, colour_by=&quot;subsets_Mito_detected&quot;, point_alpha = 0.1) + 
+      guides(colour = guide_legend(override.aes = list(alpha = 1, size = 2))) + 
+      ggtitle(&quot;Mitochondrial percentage&quot;),
+    plotTSNE(use_sce, colour_by=&quot;cell_cycle_phase&quot;, point_alpha = 0.1) + 
+      guides(colour = guide_legend(override.aes = list(alpha = 1, size = 2))) + 
+      ggtitle(&quot;Cell cycle phase&quot;),
+    ncol=2
+  )
+  cat(&quot;\n\n&quot;) 
+  
+  cat(&quot;#### UMAP\n\n&quot;) 
+  gridExtra::grid.arrange(
+    plotUMAP(use_sce, colour_by=&quot;cluster_id_batch&quot;, text_by=&quot;cluster_id_batch&quot;, point_alpha = 0.1) + 
+      guides(colour = guide_legend(override.aes = list(alpha = 1, size = 2))) + 
+      ggtitle(&quot;Cluster ID&quot;),
+    plotUMAP(use_sce, colour_by=&quot;site&quot;, point_alpha = 0.1) + 
+      guides(colour = guide_legend(override.aes = list(alpha = 1, size = 2))) + 
+      ggtitle(&quot;Site&quot;),
+    plotUMAP(use_sce, colour_by=&quot;detected&quot;, point_alpha = 0.1) + 
+      guides(colour = guide_legend(override.aes = list(alpha = 1, size = 2))) + 
+      ggtitle(&quot;Number of detected features&quot;),
+    plotUMAP(use_sce, colour_by=&quot;subsets_Mito_detected&quot;, point_alpha = 0.1) + 
+      guides(colour = guide_legend(override.aes = list(alpha = 1, size = 2))) + 
+      ggtitle(&quot;Mitochondrial percentage&quot;),
+    plotUMAP(use_sce, colour_by=&quot;cell_cycle_phase&quot;, point_alpha = 0.1) + 
+      guides(colour = guide_legend(override.aes = list(alpha = 1, size = 2))) + 
+      ggtitle(&quot;Cell cycle phase&quot;),
+    ncol=2
+  )
+  cat(&quot;\n\n&quot;) 
+  # Save filtered SCE
+  norm_sce_file &lt;- gsub(&quot;sce_dmx.rds&quot;, &quot;sce_normalized.rds&quot;, sce_dmxfiles[[sce_sample_name]])
+  saveRDS(use_sce, norm_sce_file)
+}</code></pre>
+<div id="hunsg_ms3_plate_4120_1-1" class="section level3" number="9.1">
+<h3><span class="header-section-number">9.1</span>
+huNSG_ms3_Plate_4120_1</h3>
+<div id="tsne" class="section level4" number="9.1.1">
+<h4><span class="header-section-number">9.1.1</span> TSNE</h4>
+<p><img src="figure/nsg-normal-10x_rnaseq-qc.Rmd/normalization-dec-1.png" width="6120" style="display: block; margin: auto;" /></p>
+</div>
+<div id="umap" class="section level4" number="9.1.2">
+<h4><span class="header-section-number">9.1.2</span> UMAP</h4>
+<p><img src="figure/nsg-normal-10x_rnaseq-qc.Rmd/normalization-dec-2.png" width="6120" style="display: block; margin: auto;" /></p>
+<br>
+<p>
+<button type="button" class="btn btn-default btn-workflowr btn-workflowr-sessioninfo" data-toggle="collapse" data-target="#workflowr-sessioninfo" style="display: block;">
+<span class="glyphicon glyphicon-wrench" aria-hidden="true"></span>
+Session information
+</button>
+</p>
+<div id="workflowr-sessioninfo" class="collapse">
+<pre class="r"><code>sessionInfo()</code></pre>
+<p>R version 4.2.2 (2022-10-31) Platform: x86_64-apple-darwin17.0
+(64-bit) Running under: macOS Big Sur … 10.16</p>
+<p>Matrix products: default BLAS:
+/Library/Frameworks/R.framework/Versions/4.2/Resources/lib/libRblas.0.dylib
+LAPACK:
+/Library/Frameworks/R.framework/Versions/4.2/Resources/lib/libRlapack.dylib</p>
+<p>locale: [1]
+en_US.UTF-8/en_US.UTF-8/en_US.UTF-8/C/en_US.UTF-8/en_US.UTF-8</p>
+<p>attached base packages: [1] stats4 stats graphics grDevices utils
+datasets methods<br />
+[8] base</p>
+<p>other attached packages: [1] BiocSingular_1.14.0
+scDblFinder_1.13.8<br />
+[3] scran_1.26.2 SeuratObject_4.1.3<br />
+[5] Seurat_4.3.0 DropletUtils_1.18.1<br />
+[7] scater_1.26.1 scuttle_1.8.4<br />
+[9] SingleCellExperiment_1.20.0 SummarizedExperiment_1.28.0 [11]
+Biobase_2.58.0 GenomicRanges_1.50.2<br />
+[13] GenomeInfoDb_1.34.9 IRanges_2.32.0<br />
+[15] S4Vectors_0.36.1 BiocGenerics_0.44.0<br />
+[17] MatrixGenerics_1.10.0 matrixStats_1.0.0<br />
+[19] arsenal_3.6.3 ggbeeswarm_0.7.2<br />
+[21] colorblindr_0.1.0 colorspace_2.1-1<br />
+[23] cowplot_1.1.1 kableExtra_1.3.4<br />
+[25] knitr_1.44 DT_0.30<br />
+[27] foreach_1.5.2 showtext_0.9-6<br />
+[29] showtextdb_3.0 sysfonts_0.8.8<br />
+[31] lubridate_1.9.3 forcats_1.0.0<br />
+[33] stringr_1.5.1 dplyr_1.1.4<br />
+[35] purrr_1.0.2 readr_2.1.4<br />
+[37] tidyr_1.3.1 tibble_3.2.1<br />
+[39] ggplot2_3.5.0 tidyverse_2.0.0<br />
+[41] workflowr_1.7.1</p>
+<p>loaded via a namespace (and not attached): [1] rtracklayer_1.58.0
+scattermore_1.2<br />
+[3] R.methodsS3_1.8.2 bit64_4.0.5<br />
+[5] irlba_2.3.5.1 DelayedArray_0.24.0<br />
+[7] R.utils_2.12.2 data.table_1.14.8<br />
+[9] RCurl_1.98-1.12 generics_0.1.3<br />
+[11] ScaledMatrix_1.6.0 callr_3.7.3<br />
+[13] RANN_2.6.1 future_1.33.0<br />
+[15] bit_4.0.5 tzdb_0.4.0<br />
+[17] spatstat.data_3.0-3 webshot_0.5.5<br />
+[19] xml2_1.3.5 httpuv_1.6.8<br />
+[21] viridis_0.6.4 xfun_0.40<br />
+[23] hms_1.1.3 jquerylib_0.1.4<br />
+[25] evaluate_0.22 promises_1.2.1<br />
+[27] fansi_1.0.6 restfulr_0.0.15<br />
+[29] igraph_1.5.1 DBI_1.1.3<br />
+[31] htmlwidgets_1.6.2 spatstat.geom_3.2-7<br />
+[33] ellipsis_0.3.2 deldir_1.0-9<br />
+[35] sparseMatrixStats_1.10.0 vctrs_0.6.5<br />
+[37] ROCR_1.0-11 abind_1.4-5<br />
+[39] cachem_1.0.8 withr_3.0.1<br />
+[41] progressr_0.14.0 vroom_1.6.4<br />
+[43] sctransform_0.4.1 GenomicAlignments_1.34.0 [45] goftest_1.2-3
+svglite_2.1.2<br />
+[47] cluster_2.1.4 lazyeval_0.2.2<br />
+[49] crayon_1.5.2 spatstat.explore_3.2-3<br />
+[51] labeling_0.4.3 edgeR_3.40.2<br />
+[53] pkgconfig_2.0.3 nlme_3.1-163<br />
+[55] vipor_0.4.5 rlang_1.1.4<br />
+[57] globals_0.16.2 lifecycle_1.0.4<br />
+[59] miniUI_0.1.1.1 rsvd_1.0.5<br />
+[61] rprojroot_2.0.3 polyclip_1.10-6<br />
+[63] lmtest_0.9-40 Matrix_1.5-3<br />
+[65] Rhdf5lib_1.20.0 zoo_1.8-12<br />
+[67] beeswarm_0.4.0 whisker_0.4.1<br />
+[69] ggridges_0.5.4 processx_3.8.2<br />
+[71] rjson_0.2.21 png_0.1-8<br />
+[73] viridisLite_0.4.2 bitops_1.0-7<br />
+[75] getPass_0.2-2 R.oo_1.25.0<br />
+[77] KernSmooth_2.23-22 rhdf5filters_1.10.0<br />
+[79] Biostrings_2.66.0 DelayedMatrixStats_1.20.0 [81] parallelly_1.36.0
+spatstat.random_3.2-1<br />
+[83] beachmat_2.14.0 scales_1.3.0<br />
+[85] magrittr_2.0.3 plyr_1.8.9<br />
+[87] ica_1.0-3 zlibbioc_1.44.0<br />
+[89] compiler_4.2.2 BiocIO_1.8.0<br />
+[91] dqrng_0.3.1 RColorBrewer_1.1-3<br />
+[93] fitdistrplus_1.1-11 Rsamtools_2.14.0<br />
+[95] cli_3.6.3 XVector_0.38.0<br />
+[97] listenv_0.9.0 patchwork_1.1.3<br />
+[99] pbapply_1.7-2 ps_1.7.5<br />
+[101] mgcv_1.9-0 MASS_7.3-60<br />
+[103] tidyselect_1.2.1 stringi_1.8.4<br />
+[105] highr_0.10 yaml_2.3.7<br />
+[107] locfit_1.5-9.8 ggrepel_0.9.4<br />
+[109] grid_4.2.2 sass_0.4.7<br />
+[111] tools_4.2.2 timechange_0.2.0<br />
+[113] future.apply_1.11.0 parallel_4.2.2<br />
+[115] rstudioapi_0.15.0 bluster_1.8.0<br />
+[117] git2r_0.32.0 metapod_1.6.0<br />
+[119] gridExtra_2.3 farver_2.1.2<br />
+[121] Rtsne_0.16 digest_0.6.37<br />
+[123] shiny_1.7.5.1 Rcpp_1.0.13<br />
+[125] later_1.3.1 RcppAnnoy_0.0.21<br />
+[127] httr_1.4.7 rvest_1.0.3<br />
+[129] XML_3.99-0.14 fs_1.6.4<br />
+[131] tensor_1.5 reticulate_1.34.0<br />
+[133] splines_4.2.2 uwot_0.1.16<br />
+[135] statmod_1.5.0 spatstat.utils_3.0-3<br />
+[137] sp_2.1-1 xgboost_1.7.5.1<br />
+[139] plotly_4.10.3 systemfonts_1.1.0<br />
+[141] xtable_1.8-4 jsonlite_1.8.7<br />
+[143] R6_2.5.1 pillar_1.9.0<br />
+[145] htmltools_0.5.6.1 mime_0.12<br />
+[147] glue_1.8.0 fastmap_1.1.1<br />
+[149] BiocParallel_1.32.5 BiocNeighbors_1.16.0<br />
+[151] codetools_0.2-19 utf8_1.2.4<br />
+[153] lattice_0.20-45 bslib_0.5.1<br />
+[155] spatstat.sparse_3.0-2 leiden_0.4.3<br />
+[157] survival_3.5-7 limma_3.54.1<br />
+[159] rmarkdown_2.25 munsell_0.5.1<br />
+[161] rhdf5_2.42.0 GenomeInfoDbData_1.2.9<br />
+[163] iterators_1.0.14 HDF5Array_1.26.0<br />
+[165] reshape2_1.4.4 gtable_0.3.5</p>
+</div>
+</div>
+</div>
+</div>
+</div>
+</div>
+</div>
+</div>
+</div>
+
+
+<!-- Adjust MathJax settings so that all math formulae are shown using
+TeX fonts only; see
+https://docs.mathjax.org/en/latest/web/configuration.html. This will make
+the presentation more consistent at the cost of the webpage sometimes
+taking slightly longer to load. Note that this only works because the
+footer is added to webpages before the MathJax javascript. -->
+<script type="text/x-mathjax-config">
+  MathJax.Hub.Config({
+    "HTML-CSS": { availableFonts: ["TeX"] }
+  });
+</script>
+
+
+
+
+</div>
+</div>
+
+</div>
+
+<script>
+
+// add bootstrap table styles to pandoc tables
+function bootstrapStylePandocTables() {
+  $('tr.odd').parent('tbody').parent('table').addClass('table table-condensed');
+}
+$(document).ready(function () {
+  bootstrapStylePandocTables();
+});
+
+
+</script>
+
+<!-- tabsets -->
+
+<script>
+$(document).ready(function () {
+  window.buildTabsets("TOC");
+});
+
+$(document).ready(function () {
+  $('.tabset-dropdown > .nav-tabs > li').click(function () {
+    $(this).parent().toggleClass('nav-tabs-open');
+  });
+});
+</script>
+
+<!-- code folding -->
+<script>
+$(document).ready(function () {
+  window.initializeCodeFolding("hide" === "show");
+});
+</script>
+
+<script>
+$(document).ready(function ()  {
+
+    // temporarily add toc-ignore selector to headers for the consistency with Pandoc
+    $('.unlisted.unnumbered').addClass('toc-ignore')
+
+    // move toc-ignore selectors from section div to header
+    $('div.section.toc-ignore')
+        .removeClass('toc-ignore')
+        .children('h1,h2,h3,h4,h5').addClass('toc-ignore');
+
+    // establish options
+    var options = {
+      selectors: "h1,h2,h3,h4,h5",
+      theme: "bootstrap3",
+      context: '.toc-content',
+      hashGenerator: function (text) {
+        return text.replace(/[.\\/?&!#<>]/g, '').replace(/\s/g, '_');
+      },
+      ignoreSelector: ".toc-ignore",
+      scrollTo: 0
+    };
+    options.showAndHide = true;
+    options.smoothScroll = true;
+
+    // tocify
+    var toc = $("#TOC").tocify(options).data("toc-tocify");
+});
+</script>
+
+<!-- dynamically load mathjax for compatibility with self-contained -->
+<script>
+  (function () {
+    var script = document.createElement("script");
+    script.type = "text/javascript";
+    script.src  = "https://mathjax.rstudio.com/latest/MathJax.js?config=TeX-AMS-MML_HTMLorMML";
+    document.getElementsByTagName("head")[0].appendChild(script);
+  })();
+</script>
+
+</body>
+</html>
